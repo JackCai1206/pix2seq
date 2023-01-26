@@ -18,6 +18,7 @@
 import hashlib
 import io
 import itertools
+import multiprocessing
 # copybara:insert import multiprocessing
 
 from absl import logging

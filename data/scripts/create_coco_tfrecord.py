@@ -35,7 +35,7 @@ flags.DEFINE_string('cap_ann_file', '', 'Captions annotation file.')
 flags.DEFINE_string('key_ann_file', '', 'Keypoints annotation file.')
 flags.DEFINE_string('pan_ann_file', '', 'Panoptic annotation file.')
 flags.DEFINE_string('pan_masks_dir', '', 'Directory containing panoptic masks.')
-flags.DEFINE_string('output_dir', None, 'Output directory')
+flags.DEFINE_string('output_dir', '', 'Output directory')
 flags.DEFINE_integer('num_shards', 32, 'Number of shards for output file.')
 
 FLAGS = flags.FLAGS

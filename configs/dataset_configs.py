@@ -26,10 +26,10 @@ _shared_dataset_config = D(
 # Generate tfrecords for the dataset using data/scripts/create_coco_tfrecord.py
 # and add paths here.
 COCO_TRAIN_TFRECORD_PATTERN = 'gs://pix2seq/multi_task/data/coco/tfrecord/train*'
-COCO_VAL_TFRECORD_PATTERN = 'gs://pix2seq/multi_task/data/coco/tfrecord/val*'
+COCO_VAL_TFRECORD_PATTERN = '/data/hulab/zcai75/pix2seq/coco/val*'
 
 # Download from gs://pix2seq/multi_task/data/coco/json
-COCO_ANNOTATIONS_DIR = '/tmp/coco_annotations'
+COCO_ANNOTATIONS_DIR = '/data/hulab/zcai75/coco/annotations/'
 
 _shared_coco_dataset_config = D(
     train_file_pattern=COCO_TRAIN_TFRECORD_PATTERN,
