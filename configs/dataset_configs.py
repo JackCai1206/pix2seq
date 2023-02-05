@@ -28,6 +28,9 @@ _shared_dataset_config = D(
 COCO_TRAIN_TFRECORD_PATTERN = 'gs://pix2seq/multi_task/data/coco/tfrecord/train*'
 COCO_VAL_TFRECORD_PATTERN = '/data/hulab/zcai75/pix2seq/coco/val*'
 
+VG_TRAIN_TFRECORD_PATTERN = '/data/hulab/zcai75/pix2seq/vg/train*'
+VG_VAL_TFRECORD_PATTERN = '/data/hulab/zcai75/pix2seq/vg/val*'
+
 # Download from gs://pix2seq/multi_task/data/coco/json
 COCO_ANNOTATIONS_DIR = '/data/hulab/zcai75/coco/annotations/'
 
@@ -44,6 +47,16 @@ _shared_coco_dataset_config = D(
     # record_groundtruth.
     coco_annotations_dir_for_metrics=COCO_ANNOTATIONS_DIR,
     label_shift=0,
+    **_shared_dataset_config
+)
+
+vg_dataset_config = D(
+    train_file_patter=VG_TRAIN_TFRECORD_PATTERN,
+    val_file_pattern=VG_VAL_TFRECORD_PATTERN,
+    train_num_examples=118287,
+    eval_num_examples=5000,
+    train_split='train',
+    eval_split='validation',
     **_shared_dataset_config
 )
 
@@ -83,4 +96,10 @@ dataset_configs = {
           train_filename_for_metrics='captions_train2017_eval_compatible.json',
           val_filename_for_metrics='captions_val2017_eval_compatible.json',
           **_shared_coco_dataset_config),
+
+    'visual_genome':
+        D(
+            name='visual_genome',
+            **vg_dataset_config
+        ),
 }

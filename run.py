@@ -37,6 +37,7 @@ from tasks import captioning
 from tasks import instance_segmentation
 from tasks import keypoint_detection
 from tasks import object_detection
+from tasks import scene_graph_generation
 # pylint: enable=unused-import
 from tasks import task as task_lib
 import tensorflow as tf

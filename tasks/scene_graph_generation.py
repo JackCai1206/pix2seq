@@ -33,10 +33,8 @@ from tasks.visualization import vis_utils
 import tensorflow as tf
 
 
-@task_lib.TaskRegistry.register('object_detection')
-class TaskObjectDetection(task_lib.Task):
-	"""Object detection task with coco metric evaluation."""
-
+@task_lib.TaskRegistry.register('scene_graph_generation')
+class TaskSceneGraphGeneration(task_lib.Task):
 	def __init__(self,
 							 config: ml_collections.ConfigDict):
 		super().__init__(config)
