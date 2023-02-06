@@ -54,7 +54,7 @@ vg_dataset_config = D(
     train_file_patter=VG_TRAIN_TFRECORD_PATTERN,
     val_file_pattern=VG_VAL_TFRECORD_PATTERN,
     train_num_examples=118287,
-    eval_num_examples=5000,
+    eval_num_examples=45350,
     train_split='train',
     eval_split='validation',
     **_shared_dataset_config

@@ -33,7 +33,7 @@ def create_anno_iter(img_data, label_data, ann):
 		# if img['image_id'] > 108072:
 		# 	yield None, True
 		# 	continue
-		
+
 		split = 0 if FLAGS.train else 2
 		if ann['split'][j] != split:
 			yield None, True
