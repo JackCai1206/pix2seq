@@ -399,39 +399,43 @@ def augment_bbox(bbox, bbox_label, max_jitter, n_noise_bbox, mix_rate=0.):
   return bbox_new, bbox_new_label
 
 
-def inject_noise_bbox(labels, max_instances_per_image):
-  labels = copy.copy(labels)
-  num_instances = tf.shape(labels['bbox'])[0]
-  if num_instances < max_instances_per_image:
-    n_noise_bbox = max_instances_per_image - num_instances
-    labels['bbox'], labels['label'] = augment_bbox(
-        labels['bbox'], labels['label'], 0., n_noise_bbox)
+def inject_noise_bbox(labels, max_instances_per_image, object_coordinate_keys=('bbox'), object_coordinate_labels=('label')):
+  for key, label_key in zip(object_coordinate_keys, object_coordinate_labels):
+    labels = copy.copy(labels)
+    labels_key_cpy = copy.copy(labels[key])
+    labels_id_cpy = copy.copy(labels[label_key])
+    num_instances = tf.shape(labels[key])[0]
+    if num_instances < max_instances_per_image:
+      n_noise_bbox = max_instances_per_image - num_instances
+      labels[key], labels[label_key] = augment_bbox(
+        labels_key_cpy , labels_id_cpy, 0., n_noise_bbox)
   return labels
 
 
-def reorder_object_instances(features, labels, order):
+def reorder_object_instances(features, labels, order, object_coordinate_keys=('bbox')):
   """Must be called _before_ padding to max instances."""
   if order == 'none':
     return features, labels
 
-  bbox = labels['bbox']
-  assert bbox.shape.rank == 2, 'Must be unbatched'
-  bbox = tf.reshape(bbox, [-1, 2, 2])
+  for key in object_coordinate_keys:
+    bbox = labels[key]
+    assert bbox.shape.rank == 2, 'Must be unbatched'
+    bbox = tf.reshape(bbox, [-1, 2, 2])
 
-  if order == 'random':
-    idx = tf.random.shuffle(tf.range(tf.shape(bbox)[0]))
-  elif order == 'area':
-    areas = tf.cast(tf.reduce_prod(bbox[:, 1, :] - bbox[:, 0, :], axis=1),
-                    tf.int64)  # approximated size.
-    idx = tf.argsort(areas, direction='DESCENDING')
-  elif order == 'dist2ori':
-    y, x = bbox[:, 0], bbox[:, 1]  # using top-left corner.
-    dist2ori = tf.square(y) + tf.square(x)
-    idx = tf.argsort(dist2ori, direction='ASCENDING')
-  else:
-    raise ValueError('Unknown order {}'.format(order))
+    if order == 'random':
+      idx = tf.random.shuffle(tf.range(tf.shape(bbox)[0]))
+    elif order == 'area':
+      areas = tf.cast(tf.reduce_prod(bbox[:, 1, :] - bbox[:, 0, :], axis=1),
+                      tf.int64)  # approximated size.
+      idx = tf.argsort(areas, direction='DESCENDING')
+    elif order == 'dist2ori':
+      y, x = bbox[:, 0], bbox[:, 1]  # using top-left corner.
+      dist2ori = tf.square(y) + tf.square(x)
+      idx = tf.argsort(dist2ori, direction='ASCENDING')
+    else:
+      raise ValueError('Unknown order {}'.format(order))
 
-  labels = gather_label_indices(labels, idx)
+    labels = gather_label_indices(labels, idx)
 
   return features, labels
 
@@ -470,19 +474,20 @@ def random_resize(image, min_image_size, max_image_size, max_out_prob=0.,
       image, (oh, ow), method=resize_method, antialias=antialias)
 
 
-def filter_invalid_objects(labels, filter_crowd=False):
+def filter_invalid_objects(labels, filter_crowd=False, object_coordinate_keys=('bbox')):
   """Filtering out objects that are invalid/undesirable."""
   # TODO(iamtingchen): filtering other invalid objects (e.g. no keypoint left).
   # Filtering out invalid bbox.
-  bbox = labels['bbox']
-  box_valid = tf.logical_and(bbox[:, 2] > bbox[:, 0], bbox[:, 3] > bbox[:, 1])
-  # Filtering out crowded objects.
-  if filter_crowd:
-    not_crowd = tf.logical_not(labels['is_crowd'])
-    valid_indices = tf.where(tf.logical_and(box_valid, not_crowd))[:, 0]
-  else:
-    valid_indices = tf.where(box_valid)[:, 0]
-  return gather_label_indices(labels, valid_indices)
+  for key in object_coordinate_keys:
+    bbox = labels[key]
+    box_valid = tf.logical_and(bbox[:, 2] > bbox[:, 0], bbox[:, 3] > bbox[:, 1])
+    # Filtering out crowded objects.
+    if filter_crowd:
+      not_crowd = tf.logical_not(labels['is_crowd'])
+      valid_indices = tf.where(tf.logical_and(box_valid, not_crowd))[:, 0]
+    else:
+      valid_indices = tf.where(box_valid)[:, 0]
+    return gather_label_indices(labels, valid_indices)
 
 
 def scale_jitter(image, min_scale, max_scale, target_height, target_width,
@@ -672,7 +677,8 @@ def preprocess_train(features,
                      random_flip=True,
                      color_jitter_strength=0.,
                      filter_invalid_labels=True,
-                     object_coordinate_keys=('bbox', 'polygon', 'keypoints')):
+                     object_coordinate_keys=('bbox', 'polygon', 'keypoints'),
+                     object_coordinate_labels=('labels')):
   """Preprocessing for training input pipeline (scale jittering-based)."""
   if features['image'].dtype != tf.float32:
     features['image'] = tf.image.convert_image_dtype(
@@ -690,11 +696,11 @@ def preprocess_train(features,
         features['image'], strength=color_jitter_strength, impl='simclrv2')
     features['image'] = tf.clip_by_value(features['image'], 0., 1.)
   if filter_invalid_labels:
-    labels = filter_invalid_objects(labels, filter_crowd=True)
+    labels = filter_invalid_objects(labels, filter_crowd=False, object_coordinate_keys=object_coordinate_keys)
   if object_order is not None:  # for detection.
-    features, labels = reorder_object_instances(features, labels, object_order)
+    features, labels = reorder_object_instances(features, labels, object_order, object_coordinate_keys=object_coordinate_keys)
   if inject_noise_instances:  # for detection.
-    labels = inject_noise_bbox(labels, max_instances_per_image)
+    labels = inject_noise_bbox(labels, max_instances_per_image, object_coordinate_keys=object_coordinate_keys, object_coordinate_labels=object_coordinate_labels)
   features, labels = pad_image_to_max_size(
       features, labels, max_image_size, object_coordinate_keys)
   if max_instances_per_image > 0:

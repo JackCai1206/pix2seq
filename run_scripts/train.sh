@@ -7,4 +7,5 @@ python ../run.py \
     --config=$config \
     --config.train.batch_size=32 \
     --config.train.epochs=20 \
-    --config.optimization.learning_rate=3e-5
+    --config.optimization.learning_rate=3e-5 \
+    --run_eagerly > train.out

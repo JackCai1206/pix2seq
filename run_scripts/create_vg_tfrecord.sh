@@ -1,5 +1,5 @@
 export PYTHONPATH=$PYTHONPATH:~/Github/pix2seq
-train=False
+train=false
 if $train; then
     split=train
 else
@@ -12,4 +12,5 @@ python ../data/scripts/create_vg_tfrecord.py \
     --image_data_file /data/hulab/zcai75/visual_genome/image_data.json \
     --vg_ann_label_file /data/hulab/zcai75/visual_genome/vg_motif_anno/VG-SGG-dicts-with-attri.json \
     --train=${train} \
-    --output_dir /data/hulab/zcai75/pix2seq/vg/${split}
+    --output_dir /data/hulab/zcai75/pix2seq/vg/${split} \
+    --num_shards=1

@@ -30,6 +30,10 @@ FAKE_TEXT_TOKEN = 30  # Same token to represent fake class and fake text.
 SEPARATOR_TOKEN = 40
 INVISIBLE_TOKEN = 41
 
+SUB = 42
+PRED = 43
+OBJ = 44
+
 BASE_VOCAB_SHIFT = 100
 
 # Floats used to represent padding and separator in the flat list of polygon

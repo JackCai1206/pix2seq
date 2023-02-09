@@ -18,6 +18,7 @@ import json
 import os
 import pickle
 from typing import Any, Dict, List
+import code
 
 from absl import logging
 import ml_collections
@@ -41,8 +42,8 @@ class TaskSceneGraphGeneration(task_lib.Task):
 
 		if config.task.get('max_seq_len', 'auto') == 'auto':
 			self.config.task.max_seq_len = config.task.max_instances_per_image * 5
-		self._category_names = task_utils.get_category_names(
-				config.dataset.get('category_names_path'))
+		# self._category_names = task_utils.get_category_names(
+		# 		config.dataset.get('category_names_path'))
 		metric_config = config.task.get('metric')
 		if metric_config and metric_config.get('name'):
 			self._coco_metrics = metric_registry.MetricRegistry.lookup(
@@ -87,7 +88,8 @@ class TaskSceneGraphGeneration(task_lib.Task):
 							random_flip=True,
 							color_jitter_strength=config.color_jitter_strength,
 							filter_invalid_labels=True,
-							object_coordinate_keys=('bbox', 'polygon', 'keypoints'))
+							object_coordinate_keys=('box1', 'box2'),
+							object_coordinate_labels=('box1_id', 'box2_id'))
 					features_list.append(features_)
 					labels_list.append(labels_)
 				features = utils.merge_list_of_dict(features_list)
@@ -98,13 +100,13 @@ class TaskSceneGraphGeneration(task_lib.Task):
 						labels,
 						max_image_size=config.image_size,
 						max_instances_per_image=config.max_instances_per_image,
-						object_coordinate_keys=('bbox', 'polygon', 'keypoints'))
+						object_coordinate_keys=('box1', 'box2'))
 
 			return features, labels
 
-		if training:
-			dataset = dataset.filter(  # Filter out images with no annotations.
-					lambda features, labels: tf.shape(labels['label'])[0] > 0)
+		# if training:
+		# 	dataset = dataset.filter(  # Filter out images with no annotations.
+		# 			lambda features, labels: tf.shape(labels['label'])[0] > 0)
 		dataset = dataset.map(_preprocess_single_example,
 													num_parallel_calls=tf.data.experimental.AUTOTUNE)
 		return dataset
@@ -381,12 +383,13 @@ def add_image_summary_with_bbox(images, bboxes, classes, scores, category_names,
 	return new_images
 
 
-def build_response_seq_from_bbox(bbox,
-																 label,
-																 quantization_bins,
-																 noise_bbox_weight,
-																 coord_vocab_shift,
-																 class_label_corruption='rand_cls'):
+def build_response_seq_from_bbox(box1, box2,
+								box1_id, box2_id,
+								pred,
+								quantization_bins,
+								noise_bbox_weight,
+								coord_vocab_shift,
+								class_label_corruption='rand_cls'):
 	""""Build target seq from bounding bboxes for object detection.
 
 	Objects are serialized using the format of yxyxc.
@@ -404,38 +407,47 @@ def build_response_seq_from_bbox(bbox,
 		discrete sequences with shape (bsz, seqlen).
 	"""
 	# Bbox and label quantization.
-	is_padding = tf.expand_dims(tf.equal(label, 0), -1)
-	quantized_bbox = utils.quantize(bbox, quantization_bins)
-	quantized_bbox = quantized_bbox + coord_vocab_shift
-	quantized_bbox = tf.where(is_padding,
-														tf.zeros_like(quantized_bbox), quantized_bbox)
-	new_label = tf.expand_dims(label + vocab.BASE_VOCAB_SHIFT, -1)
-	new_label = tf.where(is_padding, tf.zeros_like(new_label), new_label)
-	lb_shape = tf.shape(new_label)
+	is_padding = tf.expand_dims(tf.equal(box1_id, 0), -1)
+	qbox1 = utils.quantize(box1, quantization_bins)
+	qbox1 = qbox1 + coord_vocab_shift
+	qbox1 = tf.where(is_padding, tf.zeros_like(qbox1), qbox1)
+
+	is_padding = tf.expand_dims(tf.equal(box1_id, 0), -1)
+	qbox2 = utils.quantize(box2, quantization_bins)
+	qbox2 = qbox2 + coord_vocab_shift
+	qbox2 = tf.where(is_padding, tf.zeros_like(qbox2), qbox1)
+
+	new_label1 = tf.expand_dims(box1_id + vocab.BASE_VOCAB_SHIFT, -1)
+	new_label1 = tf.where(is_padding, tf.zeros_like(new_label1), new_label1)
+	lb_shape = tf.shape(new_label1)
+
+	new_label2 = tf.expand_dims(box2_id + vocab.BASE_VOCAB_SHIFT, -1)
+	new_label2 = tf.where(is_padding, tf.zeros_like(new_label2), new_label2)
+	lb_shape = tf.shape(new_label2)
 
 	# Bbox and label serialization.
-	response_seq = tf.concat([quantized_bbox, new_label], axis=-1)
+	response_seq = tf.concat([qbox1, new_label1, vocab.SUB, pred, vocab.PRED, qbox2, new_label2, vocab.OBJ], axis=-1)
 	response_seq = utils.flatten_non_batch_dims(response_seq, 2)
 	rand_cls = vocab.BASE_VOCAB_SHIFT + tf.random.uniform(
 			lb_shape,
 			0,
 			coord_vocab_shift - vocab.BASE_VOCAB_SHIFT,
-			dtype=new_label.dtype)
-	fake_cls = vocab.FAKE_CLASS_TOKEN + tf.zeros_like(new_label)
+			dtype=new_label1.dtype)
+	fake_cls = vocab.FAKE_CLASS_TOKEN + tf.zeros_like(new_label1)
 	rand_n_fake_cls = tf.where(
 			tf.random.uniform(lb_shape) > 0.5, rand_cls, fake_cls)
 	real_n_fake_cls = tf.where(
-			tf.random.uniform(lb_shape) > 0.5, new_label, fake_cls)
+			tf.random.uniform(lb_shape) > 0.5, new_label1, fake_cls)
 	real_n_rand_n_fake_cls = tf.where(
-			tf.random.uniform(lb_shape) > 0.5, new_label, rand_n_fake_cls)
-	label_mapping = {'none': new_label,
-									 'rand_cls': rand_cls,
-									 'real_n_fake_cls': real_n_fake_cls,
-									 'rand_n_fake_cls': rand_n_fake_cls,
-									 'real_n_rand_n_fake_cls': real_n_rand_n_fake_cls}
-	new_label_m = label_mapping[class_label_corruption]
-	new_label_m = tf.where(is_padding, tf.zeros_like(new_label_m), new_label_m)
-	response_seq_class_m = tf.concat([quantized_bbox, new_label_m], axis=-1)
+			tf.random.uniform(lb_shape) > 0.5, new_label1, rand_n_fake_cls)
+	label_mapping = {'none': new_label1,
+					'rand_cls': rand_cls,
+					'real_n_fake_cls': real_n_fake_cls,
+					'rand_n_fake_cls': rand_n_fake_cls,
+					'real_n_rand_n_fake_cls': real_n_rand_n_fake_cls}
+	new_label_m1 = label_mapping[class_label_corruption]
+	new_label_m1 = tf.where(is_padding, tf.zeros_like(new_label_m1), new_label_m1)
+	response_seq = tf.concat([qbox1, new_label_m1, vocab.SUB, pred, vocab.PRED, qbox2, new_label_m2, vocab.OBJ], axis=-1)
 	response_seq_class_m = utils.flatten_non_batch_dims(response_seq_class_m, 2)
 
 	# Get token weights.

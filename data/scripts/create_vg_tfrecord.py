@@ -23,53 +23,54 @@ flags.DEFINE_integer('num_shards', 32, 'Number of shards for output file.')
 FLAGS = flags.FLAGS
 
 def create_anno_iter(img_data, label_data, ann):
+	skipped = 0
 	for j, img in enumerate(tqdm(img_data)):
+		split = 0 if FLAGS.train else 2
+		if ann['split'][j] != split:
+			skipped += 1
+			continue
+
 		with open(os.path.join(FLAGS.vg_image_dir, str(img['image_id'])) + '.jpg', 'rb') as fid:
 			encoded_jpg = fid.read()
 		feature_dict = tfrecord_lib.image_info_to_feature_dict(
 			img['height'], img['width'], f"{img['image_id']}.JPG", img['image_id'], encoded_jpg, 'jpg'
 		)
-		
-		# if img['image_id'] > 108072:
-		# 	yield None, True
-		# 	continue
-
-		split = 0 if FLAGS.train else 2
-		if ann['split'][j] != split:
-			yield None, True
-			continue
 
 		first_rel = ann['img_to_first_rel'][j]
 		last_rel = ann['img_to_last_rel'][j]
 		img_rels = ann['relationships'][first_rel : last_rel+1]
 		if len(img_rels) == 0:
-			yield None, True
+			skipped += 1
 			continue
 
 		box1_ids = img_rels[:, 0]
 		box2_ids = img_rels[:, 1]
 		pred_ids = ann['predicates'][first_rel : last_rel+1]
-		box1 = [ann['boxes_1024'][i] for i in box1_ids]
-		box2 = [ann['boxes_1024'][i] for i in box2_ids]
+		box1 = tf.constant([ann['boxes_1024'][i] for i in box1_ids])
+		box2 = tf.constant([ann['boxes_1024'][i] for i in box2_ids])
 		pred_label = [label_data['idx_to_predicate'][str(i[0])].encode('utf-8') for i in pred_ids]
 		box1_label = [label_data['idx_to_label'][str(ann['labels'][i][0])].encode('utf-8') for i in box1_ids]
 		box2_label = [label_data['idx_to_label'][str(ann['labels'][i][0])].encode('utf-8') for i in box2_ids]
 
 		feature_dict.update({
-			'box1': tfrecord_lib.convert_to_feature(box1, 'int64_list'),
+			'box1': tfrecord_lib.convert_to_feature(tf.io.serialize_tensor(box1).numpy(), 'bytes'),
 			'pred': tfrecord_lib.convert_to_feature(pred_ids, 'int64_list'),
-			'box2': tfrecord_lib.convert_to_feature(box2, 'int64_list'),
+			'box2': tfrecord_lib.convert_to_feature(tf.io.serialize_tensor(box2).numpy(), 'bytes'),
+			'box1_id': tfrecord_lib.convert_to_feature(box1_ids, 'int64_list'),
+			'box2_id': tfrecord_lib.convert_to_feature(box2_ids, 'int64_list'),
 			'pred_label': tfrecord_lib.convert_to_feature(pred_label, 'bytes_list'),
 			'box1_label': tfrecord_lib.convert_to_feature(box1_label, 'bytes_list'),
 			'box2_label': tfrecord_lib.convert_to_feature(box2_label, 'bytes_list')
 		})
 
-		yield feature_dict, False
+		yield feature_dict, skipped
+		skipped = 0
+		# break
 
 
 def create_example(feature_dict, skipped):
 	example = tf.train.Example(features=tf.train.Features(feature=feature_dict))
-	return example, 0 if not skipped else 1
+	return example, skipped
 
 def main(_):
 	logging.info('Building instance index.')

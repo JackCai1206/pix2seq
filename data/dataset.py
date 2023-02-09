@@ -16,6 +16,7 @@
 """Dataset base class."""
 
 import abc
+import code
 import functools
 import operator
 from typing import Callable
@@ -56,6 +57,7 @@ class Dataset(abc.ABC):
     """Load tf.data.Dataset from sources such as TFDS or TFRecord files."""
 
   def parse_example(self, example):
+    print(example.eval())
     return example
 
   def filter_example(self, unused_example, unused_training):
@@ -104,7 +106,8 @@ class Dataset(abc.ABC):
       dataset = dataset.map(
           self.parse_example,
           num_parallel_calls=tf.data.experimental.AUTOTUNE
-      ).filter(
+      )
+      dataset = dataset.filter(
           lambda x: self.filter_example(x, training)
       ).map(
           lambda x: self.extract(x, training),

@@ -211,6 +211,11 @@ def scale_points(points, scale):
   points = preserve_reserved_tokens(points, points_orig)
   return points
 
+def scale_points_v2(points, scale):
+  points = tf.reshape(points, [-1, 2, 2])
+  points = points * scale
+  points = tf.reshape(points, [-1, 4])
+  return points
 
 def preserve_reserved_tokens(points, points_orig):
   """Preserve reserved tokens in points according to points_orig."""

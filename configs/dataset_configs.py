@@ -51,10 +51,10 @@ _shared_coco_dataset_config = D(
 )
 
 vg_dataset_config = D(
-    train_file_patter=VG_TRAIN_TFRECORD_PATTERN,
+    train_file_pattern=VG_TRAIN_TFRECORD_PATTERN,
     val_file_pattern=VG_VAL_TFRECORD_PATTERN,
-    train_num_examples=118287,
-    eval_num_examples=45350,
+    train_num_examples=108073-12928,
+    eval_num_examples=108073-81627,
     train_split='train',
     eval_split='validation',
     **_shared_dataset_config

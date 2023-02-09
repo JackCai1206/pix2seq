@@ -92,7 +92,7 @@ def get_config(config_str=None):
           dec_proj_mode='mlp',
           pos_encoding='sin_cos',
           pos_encoding_dec='learned',
-        #   pretrained_ckpt=get_obj365_pretrained_checkpoint(encoder_variant),
+          pretrained_ckpt=None,
       ),
 
       optimization=D(
@@ -124,7 +124,7 @@ def get_config(config_str=None):
           tag='eval',
           checkpoint_dir='',                # checkpoint_dir will be model_dir if not set.
           # checkpoint_dir=get_coco_finetuned_checkpoint(encoder_variant, image_size[0]),
-          batch_size=8,                     # needs to be divisible by total eval examples.
+          batch_size=14,                     # needs to be divisible by total eval examples.
           steps=0,                          # 0 means eval over full validation set.
       ),
   )

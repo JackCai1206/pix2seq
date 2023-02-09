@@ -1,3 +1,4 @@
+import sys
 import numpy as np
 import utils
 import vocab
@@ -10,13 +11,16 @@ class VisualGenomeTFRecordDataset(dataset_lib.TFRecordDataset):
     def get_feature_map(self):
         image_feature_map = decode_utils.get_feature_map_for_image()
         vg_feature_map = {
-			'box1': tf.io.VarLenFeature(tf.float32),
+			'box1': tf.io.VarLenFeature(tf.string),
 			'pred': tf.io.VarLenFeature(tf.int64),
-			'box2': tf.io.VarLenFeature(tf.float32),
-			'pred_label': tf.io.VarLenFeature(tf.int64),
-			'box1_label': tf.io.VarLenFeature(tf.int64),
-			'box2_label': tf.io.VarLenFeature(tf.int64)
+			'box2': tf.io.VarLenFeature(tf.string),
+            'box1_id': tf.io.VarLenFeature(tf.int64),
+            'box2_id': tf.io.VarLenFeature(tf.int64),
+			'pred_label': tf.io.VarLenFeature(tf.string),
+			'box1_label': tf.io.VarLenFeature(tf.string),
+			'box2_label': tf.io.VarLenFeature(tf.string)
 		}
+        return {**image_feature_map, **vg_feature_map}
     
     def filter_example(self, example, training):
         if training:
@@ -31,9 +35,13 @@ class VisualGenomeTFRecordDataset(dataset_lib.TFRecordDataset):
         }
 
         scale = 1. / utils.tf_float32(tf.shape(features['image'])[:2])
-        box1 = utils.scale_points(example['box1'])
-        box2 = utils.scale_points(example['box2'])
+        box1 = utils.scale_points_v2(tf.cast(tf.io.parse_tensor(example['box1'][0], tf.int32), tf.float32), scale)
+        box2 = utils.scale_points_v2(tf.cast(tf.io.parse_tensor(example['box2'][0], tf.int32), tf.float32), scale)
+        # box1 = tf.io.parse_tensor(example['box1'][0], tf.int32)
+        # box2 = tf.io.parse_tensor(example['box2'][0], tf.int32)
 
         labels = {k: v for k, v in example.items() if 'image' not in k}
+        labels['box1'] = box1
+        labels['box2'] = box2
 
         return features, labels
