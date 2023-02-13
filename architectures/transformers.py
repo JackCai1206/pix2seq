@@ -648,6 +648,8 @@ class VisionTransformer(tf.keras.layers.Layer):  # pylint: disable=missing-docst
     tokens = self.stem_conv(images)
     bsz, h, w, dim = get_shape(tokens)
     tokens = self.stem_ln(tf.reshape(tokens, [bsz, h * w, dim]))
+    # tf.print('tokens', tokens.shape)
+    # tf.print('images', images.shape)
 
     tokens = tokens + tf.expand_dims(self.vis_pos_emb, 0)
     if self.use_cls_token:

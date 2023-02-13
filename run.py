@@ -41,7 +41,7 @@ from tasks import scene_graph_generation
 # pylint: enable=unused-import
 from tasks import task as task_lib
 import tensorflow as tf
-
+tf.get_logger().setLevel('ERROR')
 
 TRAIN = 'train'
 EVAL = 'eval'

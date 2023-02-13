@@ -28,8 +28,8 @@ def get_config(config_str=None):
   """config_str is either empty or contains task,architecture variants."""
 
   task_variant = 'scene_graph_generation@visual_genome'
-  encoder_variant = 'vit-b'                 # Set model architecture.
-  image_size = (640, 640)                   # Set image size.
+  encoder_variant = 'resnet'                 # Set model architecture.
+  image_size = (480, 480)                   # Set image size.
 
   tasks_and_datasets = []
   for task_and_ds in task_variant.split('+'):
@@ -41,8 +41,9 @@ def get_config(config_str=None):
           vocab_id=10,
           image_size=image_size,
           quantization_bins=1000,
-          max_instances_per_image=100,
-          max_instances_per_image_test=100,
+          max_instances_per_image=20,
+          max_instances_per_image_test=20,
+          max_seq_len=512,
           object_order='random',
           color_jitter_strength=0.,
           jitter_scale_min=0.3,
@@ -111,7 +112,7 @@ def get_config(config_str=None):
       ),
 
       train=D(
-          batch_size=32,
+          batch_size=16,
           epochs=40,
           steps=0,                          # set to >0 to override epochs.
           checkpoint_epochs=1,

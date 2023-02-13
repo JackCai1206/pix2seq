@@ -41,7 +41,7 @@ class TaskSceneGraphGeneration(task_lib.Task):
 		super().__init__(config)
 
 		if config.task.get('max_seq_len', 'auto') == 'auto':
-			self.config.task.max_seq_len = config.task.max_instances_per_image * 5
+			self.config.task.max_seq_len = config.task.max_instances_per_image * 15
 		# self._category_names = task_utils.get_category_names(
 		# 		config.dataset.get('category_names_path'))
 		metric_config = config.task.get('metric')
@@ -135,7 +135,9 @@ class TaskSceneGraphGeneration(task_lib.Task):
 
 		# Create input/target seq.
 		ret = build_response_seq_from_bbox(
-				labels['bbox'], labels['label'], config.quantization_bins,
+				labels['box1'], labels['box2'],
+				labels['box1_id'], labels['box2_id'],
+				labels['pred'], config.quantization_bins,
 				config.noise_bbox_weight, mconfig.coord_vocab_shift,
 				class_label_corruption=config.class_label_corruption)
 		response_seq, response_seq_cm, token_weights = ret
@@ -145,6 +147,8 @@ class TaskSceneGraphGeneration(task_lib.Task):
 		target_seq = tf.concat([prompt_seq, response_seq], -1)
 
 		# Pad sequence to a unified maximum length.
+		# tf.print(prompt_seq.shape, response_seq_cm.shape, response_seq.shape, target_seq.shape, token_weights.shape)
+		# tf.print(config.max_seq_len)
 		assert input_seq.shape[-1] <= config.max_seq_len + 1
 		input_seq = utils.pad_to_max_len(input_seq, config.max_seq_len + 1, -1)
 		target_seq = utils.pad_to_max_len(target_seq, config.max_seq_len + 1, -1)
@@ -156,6 +160,7 @@ class TaskSceneGraphGeneration(task_lib.Task):
 				target_seq == vocab.PADDING_TOKEN,
 				tf.zeros_like(token_weights) + config.eos_token_weight, token_weights)
 
+		# tf.print(features['image'].shape)
 		if training:
 			return features['image'], input_seq, target_seq, token_weights
 		else:
@@ -412,7 +417,7 @@ def build_response_seq_from_bbox(box1, box2,
 	qbox1 = qbox1 + coord_vocab_shift
 	qbox1 = tf.where(is_padding, tf.zeros_like(qbox1), qbox1)
 
-	is_padding = tf.expand_dims(tf.equal(box1_id, 0), -1)
+	is_padding = tf.expand_dims(tf.equal(box2_id, 0), -1)
 	qbox2 = utils.quantize(box2, quantization_bins)
 	qbox2 = qbox2 + coord_vocab_shift
 	qbox2 = tf.where(is_padding, tf.zeros_like(qbox2), qbox1)
@@ -426,7 +431,14 @@ def build_response_seq_from_bbox(box1, box2,
 	lb_shape = tf.shape(new_label2)
 
 	# Bbox and label serialization.
-	response_seq = tf.concat([qbox1, new_label1, vocab.SUB, pred, vocab.PRED, qbox2, new_label2, vocab.OBJ], axis=-1)
+	# tf.print('qbox1', qbox1.shape)
+	# tf.print('new_label1', new_label1.shape)
+	# tf.print(tf.broadcast_to(tf.cast(vocab.SUB, tf.int64), new_label1.shape).shape)
+	# tf.print('pred', tf.expand_dims(pred, -1).shape)
+	response_seq = tf.concat([
+		qbox1, new_label1, tf.broadcast_to(tf.cast(vocab.SUB, tf.int64), new_label1.shape),
+		tf.expand_dims(pred, -1), tf.broadcast_to(tf.cast(vocab.PRED, tf.int64), new_label1.shape),
+		qbox2, new_label2, tf.broadcast_to(tf.cast(vocab.OBJ, tf.int64), new_label1.shape)], axis=-1)
 	response_seq = utils.flatten_non_batch_dims(response_seq, 2)
 	rand_cls = vocab.BASE_VOCAB_SHIFT + tf.random.uniform(
 			lb_shape,
@@ -447,14 +459,26 @@ def build_response_seq_from_bbox(box1, box2,
 					'real_n_rand_n_fake_cls': real_n_rand_n_fake_cls}
 	new_label_m1 = label_mapping[class_label_corruption]
 	new_label_m1 = tf.where(is_padding, tf.zeros_like(new_label_m1), new_label_m1)
-	response_seq = tf.concat([qbox1, new_label_m1, vocab.SUB, pred, vocab.PRED, qbox2, new_label_m2, vocab.OBJ], axis=-1)
+	new_label_m2 = label_mapping[class_label_corruption]
+	new_label_m2 = tf.where(is_padding, tf.zeros_like(new_label_m2), new_label_m2)
+	response_seq_class_m = tf.concat([
+		qbox1, new_label_m1, tf.broadcast_to(tf.cast(vocab.SUB, tf.int64), new_label_m1.shape),
+		tf.expand_dims(pred, -1), tf.broadcast_to(tf.cast(vocab.PRED, tf.int64), new_label_m1.shape),
+		qbox2, new_label_m2, tf.broadcast_to(tf.cast(vocab.OBJ, tf.int64), new_label_m2.shape)], axis=-1)
 	response_seq_class_m = utils.flatten_non_batch_dims(response_seq_class_m, 2)
 
 	# Get token weights.
-	is_real = tf.cast(tf.not_equal(new_label, vocab.FAKE_CLASS_TOKEN), tf.float32)
-	bbox_weight = tf.tile(is_real, [1, 1, 4])
-	label_weight = is_real + (1. - is_real) * noise_bbox_weight
-	token_weights = tf.concat([bbox_weight, label_weight], -1)
+	is_real1 = tf.cast(tf.not_equal(new_label1, vocab.FAKE_CLASS_TOKEN), tf.float32)
+	bbox1_weight = tf.tile(is_real1, [1, 1, 4])
+	label1_weight = is_real1 + (1. - is_real1) * noise_bbox_weight
+	is_real2 = tf.cast(tf.not_equal(new_label2, vocab.FAKE_CLASS_TOKEN), tf.float32)
+	bbox2_weight = tf.tile(is_real2, [1, 1, 4])
+	label2_weight = is_real2 + (1. - is_real2) * noise_bbox_weight
+	token_weights = tf.concat([
+		bbox1_weight, label1_weight, tf.broadcast_to(0., new_label_m1.shape),
+		tf.expand_dims(tf.broadcast_to(1., pred.shape), -1), tf.broadcast_to(0., new_label_m1.shape),
+		bbox2_weight, label2_weight, tf.broadcast_to(0., new_label_m2.shape)
+		], -1)
 	token_weights = utils.flatten_non_batch_dims(token_weights, 2)
 
 	return response_seq, response_seq_class_m, token_weights

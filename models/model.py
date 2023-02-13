@@ -92,6 +92,8 @@ class Trainer(abc.ABC):
       strategy: tensorflow strategy such as `TPUStrategy` or `MirroredStrategy`.
     """
     logging.info('train_step begins...')
+    # for key in examples[0][1]:
+    #   tf.print(key, examples[0][1][key].shape, examples[0][1][key][0])
     preprocessed_outputs = [
         t.preprocess_batched(e, training=True) for e, t in zip(examples, tasks)]
 

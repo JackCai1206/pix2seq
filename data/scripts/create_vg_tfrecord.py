@@ -65,8 +65,7 @@ def create_anno_iter(img_data, label_data, ann):
 
 		yield feature_dict, skipped
 		skipped = 0
-		# break
-
+		break
 
 def create_example(feature_dict, skipped):
 	example = tf.train.Example(features=tf.train.Features(feature=feature_dict))
