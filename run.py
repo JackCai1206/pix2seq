@@ -29,7 +29,7 @@ from ml_collections.config_flags import config_flags
 import utils
 from data import dataset as dataset_lib
 from data import datasets  # pylint: disable=unused-import
-from metrics import coco_metrics  # pylint: disable=unused-import
+from metrics import coco_metrics, vg_metrics  # pylint: disable=unused-import
 from models import ar_model  # pylint: disable=unused-import
 from models import model as model_lib
 # pylint: disable=unused-import
@@ -125,7 +125,7 @@ def perform_evaluation(config, dataset, task, eval_steps, ckpt, strategy):
                        ''.format(cur_step, eval_steps, progress, eta))
         else:
           logging.info('Completed: %d steps', cur_step)
-      except tf.errors.OutOfRangeError:
+      except tf.errors.OutOfRangeError as e:
         logging.info('Break due to OutOfRangeError exception')
         break
     logging.info('Finished eval in %.2f mins', (time.time() - start_time) / 60.)

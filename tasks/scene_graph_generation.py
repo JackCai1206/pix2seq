@@ -42,16 +42,14 @@ class TaskSceneGraphGeneration(task_lib.Task):
 
 		if config.task.get('max_seq_len', 'auto') == 'auto':
 			self.config.task.max_seq_len = config.task.max_instances_per_image * 15
-		# self._category_names = task_utils.get_category_names(
-		# 		config.dataset.get('category_names_path'))
+		self._category_names = task_utils.get_category_names_from_vg_label_file(
+				config.dataset.get('vg_ann_label_file'))
 		metric_config = config.task.get('metric')
 		if metric_config and metric_config.get('name'):
-			self._coco_metrics = metric_registry.MetricRegistry.lookup(
+			self._vg_metrics = metric_registry.MetricRegistry.lookup(
 					metric_config.name)(config)
 		else:
-			self._coco_metrics = None
-		if self.config.task.get('eval_outputs_json_path', None):
-			self.eval_output_annotations = []
+			self._vg_metrics = None
 
 	def preprocess_single(self, dataset, batch_duplicates, training):
 		"""Task-specific preprocessing of individual example in the dataset.
@@ -209,7 +207,7 @@ class TaskSceneGraphGeneration(task_lib.Task):
 		unpadded_image_size = features['unpadded_image_size']
 
 		# Decode sequence output.
-		pred_classes, pred_bboxes, scores = task_utils.decode_object_seq_to_bbox(
+		box1_class, rel_class, box2_class, pred_bbox1, pred_bbox2, scores = task_utils.decode_seq_to_triplets(
 				logits, pred_seq, config.quantization_bins, mconfig.coord_vocab_shift)
 
 		# Compute coordinate scaling from [0., 1.] to actual pixels in orig image.
@@ -224,14 +222,19 @@ class TaskSceneGraphGeneration(task_lib.Task):
 					utils.tf_float32(unpadded_image_size))
 			scale = scale * utils.tf_float32(orig_image_size)
 			scale = tf.expand_dims(scale, 1)
-		pred_bboxes_rescaled = utils.scale_points(pred_bboxes, scale)
+		pred_bbox1_rescaled = utils.scale_points(pred_bbox1, scale)
+		pred_bbox2_rescaled = utils.scale_points(pred_bbox2, scale)
 
-		gt_classes, gt_bboxes = labels['label'], labels['bbox']
-		gt_bboxes_rescaled = utils.scale_points(gt_bboxes, scale)
-		area, is_crowd = labels['area'], labels['is_crowd']
+		print(labels)
+		gt_box1_classes, gt_rel_classes, gt_box2_classes, gt_bboxes1, gt_bboxes2 = labels['box1_label'], labels['pred_label'], labels['box2_label'], labels['box1'], labels['box2']
+		gt_bboxes1_rescaled = utils.scale_points(gt_bboxes1, scale)
+		gt_bboxes2_rescaled = utils.scale_points(gt_bboxes2, scale)
+		# area, is_crowd = labels['area'], labels['is_crowd']
 
-		return (images, image_ids, pred_bboxes, pred_bboxes_rescaled, pred_classes,
-						scores, gt_classes, gt_bboxes, gt_bboxes_rescaled, area, is_crowd)
+		return (images, image_ids,
+				pred_bbox1, pred_bbox2, pred_bbox1_rescaled, pred_bbox2_rescaled, box1_class, rel_class, box2_class, scores,
+				gt_box1_classes, gt_rel_classes, gt_box2_classes, gt_bboxes1, gt_bboxes2, gt_bboxes1_rescaled, gt_bboxes2_rescaled,
+				)
 
 	def postprocess_cpu(self, outputs, train_step,
 											eval_step=None, training=False, summary_tag='eval',
@@ -260,35 +263,25 @@ class TaskSceneGraphGeneration(task_lib.Task):
 		for i in range(len(outputs)):
 			logging.info('Copying output at index %d to cpu for cpu post-process', i)
 			new_outputs.append(tf.identity(outputs[i]))
-		(images, image_ids, pred_bboxes, pred_bboxes_rescaled, pred_classes,  # pylint: disable=unbalanced-tuple-unpacking
-		 scores, gt_classes, gt_bboxes, gt_bboxes_rescaled, area, is_crowd
-		 ) = new_outputs
-
-		if self.config.task.get('eval_outputs_json_path', None):
-			annotations = build_annotations(image_ids.numpy(),
-																			pred_classes.numpy(),
-																			pred_bboxes_rescaled.numpy(),
-																			scores.numpy(),
-																			len(self.eval_output_annotations))
-			self.eval_output_annotations.extend(annotations)
+		(images, image_ids,
+		pred_bbox1, pred_bbox2, pred_bbox1_rescaled, pred_bbox2_rescaled, box1_class, rel_class, box2_class, scores,
+		gt_box1_classes, gt_rel_classes, gt_box2_classes, gt_bboxes1, gt_bboxes2, gt_bboxes1_rescaled, gt_bboxes2_rescaled,
+		) = new_outputs
 
 		# Log/accumulate metrics.
-		if self._coco_metrics:
-			self._coco_metrics.record_prediction(
-					image_ids, pred_bboxes_rescaled, pred_classes, scores)
-			if not self._coco_metrics.gt_annotations_path:
-				self._coco_metrics.record_groundtruth(
-						image_ids,
-						gt_bboxes_rescaled,
-						gt_classes,
-						areas=area,
-						is_crowds=is_crowd)
+		if self._vg_metrics:
+			self._vg_metrics.record_prediction(
+					image_ids=image_ids, box1=pred_bbox1_rescaled, box2=pred_bbox2_rescaled, box1_label=box1_class, rel_label=rel_class, box2_label=box2_class, scores=scores)
+			self._vg_metrics.record_groundtruth(
+					image_ids=image_ids,
+					box1=gt_bboxes1_rescaled, box2=gt_bboxes2_rescaled,
+					box1_label=gt_box1_classes, rel_label=gt_rel_classes, box2_label=gt_box2_classes)
 
 		# Image summary.
 		if eval_step <= 10 or ret_results:
 			image_ids_ = image_ids.numpy()
-			gt_tuple = (gt_bboxes, gt_classes, scores * 0. + 1., 'gt')  # pylint: disable=unused-variable
-			pred_tuple = (pred_bboxes, pred_classes, scores, 'pred')
+			gt_tuple = (gt_bboxes1, gt_box1_classes, scores[..., 0] * 0. + 1., 'gt')  # pylint: disable=unused-variable
+			pred_tuple = (pred_bbox1, box1_class, scores[..., 0], 'pred')
 			vis_list = [pred_tuple]  # exclude gt for simplicity.
 			ret_images = {}
 			for bboxes_, classes_, scores_, tag_ in vis_list:
@@ -324,9 +317,9 @@ class TaskSceneGraphGeneration(task_lib.Task):
 			summary_writer.flush()
 		result_json_path = os.path.join(
 				self.config.model_dir, eval_tag + 'cocoeval.pkl')
-		if self._coco_metrics:
-			tosave = {'dataset': self._coco_metrics.dataset,
-								'detections': np.array(self._coco_metrics.detections)}
+		if self._vg_metrics:
+			tosave = {'dataset': self._vg_metrics.dataset,
+								'detections': np.array(self._vg_metrics.detections)}
 			with tf.io.gfile.GFile(result_json_path, 'wb') as f:
 				pickle.dump(tosave, f)
 		self.reset_metrics()
@@ -352,15 +345,15 @@ class TaskSceneGraphGeneration(task_lib.Task):
 
 	def compute_scalar_metrics(self, step):
 		"""Returns a dict containing scalar metrics to log."""
-		if self._coco_metrics:
-			return self._coco_metrics.result(step)
+		if self._vg_metrics:
+			return self._vg_metrics.result(step)
 		else:
 			return {}
 
 	def reset_metrics(self):
 		"""Reset states of metrics accumulators."""
-		if self._coco_metrics:
-			self._coco_metrics.reset_states()
+		if self._vg_metrics:
+			self._vg_metrics.reset_states()
 
 
 def add_image_summary_with_bbox(images, bboxes, classes, scores, category_names,
@@ -438,7 +431,8 @@ def build_response_seq_from_bbox(box1, box2,
 	response_seq = tf.concat([
 		qbox1, new_label1, tf.broadcast_to(tf.cast(vocab.SUB, tf.int64), new_label1.shape),
 		tf.expand_dims(pred, -1), tf.broadcast_to(tf.cast(vocab.PRED, tf.int64), new_label1.shape),
-		qbox2, new_label2, tf.broadcast_to(tf.cast(vocab.OBJ, tf.int64), new_label1.shape)], axis=-1)
+		qbox2, new_label2, tf.broadcast_to(tf.cast(vocab.OBJ, tf.int64), new_label1.shape),
+		tf.broadcast_to(tf.cast(vocab.TRIPLET, tf.int64), new_label1.shape)], axis=-1)
 	response_seq = utils.flatten_non_batch_dims(response_seq, 2)
 	rand_cls = vocab.BASE_VOCAB_SHIFT + tf.random.uniform(
 			lb_shape,
@@ -464,7 +458,8 @@ def build_response_seq_from_bbox(box1, box2,
 	response_seq_class_m = tf.concat([
 		qbox1, new_label_m1, tf.broadcast_to(tf.cast(vocab.SUB, tf.int64), new_label_m1.shape),
 		tf.expand_dims(pred, -1), tf.broadcast_to(tf.cast(vocab.PRED, tf.int64), new_label_m1.shape),
-		qbox2, new_label_m2, tf.broadcast_to(tf.cast(vocab.OBJ, tf.int64), new_label_m2.shape)], axis=-1)
+		qbox2, new_label_m2, tf.broadcast_to(tf.cast(vocab.OBJ, tf.int64), new_label_m2.shape),
+		tf.broadcast_to(tf.cast(vocab.TRIPLET, tf.int64), new_label1.shape)], axis=-1)
 	response_seq_class_m = utils.flatten_non_batch_dims(response_seq_class_m, 2)
 
 	# Get token weights.

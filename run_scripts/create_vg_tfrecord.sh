@@ -1,5 +1,5 @@
 export PYTHONPATH=$PYTHONPATH:~/Github/pix2seq
-train=true
+train=false
 if $train; then
     split=train
 else

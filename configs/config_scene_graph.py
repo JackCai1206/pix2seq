@@ -59,6 +59,7 @@ def get_config(config_str=None):
           top_p=0.4,
           temperature=1.0,
           weight=1.0,
+          metric=D(name='vg_sgg_recall',)
       ),
   }
 
@@ -126,7 +127,8 @@ def get_config(config_str=None):
           checkpoint_dir='',                # checkpoint_dir will be model_dir if not set.
           # checkpoint_dir=get_coco_finetuned_checkpoint(encoder_variant, image_size[0]),
           batch_size=14,                     # needs to be divisible by total eval examples.
-          steps=0,                          # 0 means eval over full validation set.
+          steps=1,                          # 0 means eval over full validation set.
+          iou_threshold=0.5
       ),
   )
 
