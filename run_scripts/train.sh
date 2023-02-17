@@ -10,6 +10,5 @@ python ../run.py \
     --model_dir=$model_dir \
     --config=$config \
     --config.train.batch_size=12 \
-    --config.train.epochs=2 \
     --config.optimization.learning_rate=3e-5 \
     --run_eagerly > train.out

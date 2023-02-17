@@ -259,45 +259,46 @@ class TaskSceneGraphGeneration(task_lib.Task):
 			A dict of visualization images if ret_results, else None.
 		"""
 		# Copy outputs to cpu.
-		new_outputs = []
-		for i in range(len(outputs)):
-			logging.info('Copying output at index %d to cpu for cpu post-process', i)
-			new_outputs.append(tf.identity(outputs[i]))
-		(images, image_ids,
-		pred_bbox1, pred_bbox2, pred_bbox1_rescaled, pred_bbox2_rescaled, box1_class, rel_class, box2_class, scores,
-		gt_box1_classes, gt_rel_classes, gt_box2_classes, gt_bboxes1, gt_bboxes2, gt_bboxes1_rescaled, gt_bboxes2_rescaled,
-		) = new_outputs
+		with tf.device('/cpu:0'):
+			new_outputs = []
+			for i in range(len(outputs)):
+				logging.info('Copying output at index %d to cpu for cpu post-process', i)
+				new_outputs.append(tf.identity(outputs[i]))
+			(images, image_ids,
+			pred_bbox1, pred_bbox2, pred_bbox1_rescaled, pred_bbox2_rescaled, box1_class, rel_class, box2_class, scores,
+			gt_box1_classes, gt_rel_classes, gt_box2_classes, gt_bboxes1, gt_bboxes2, gt_bboxes1_rescaled, gt_bboxes2_rescaled,
+			) = new_outputs
 
-		# Log/accumulate metrics.
-		if self._vg_metrics:
-			self._vg_metrics.record_prediction(
-					image_ids=image_ids, box1=pred_bbox1_rescaled, box2=pred_bbox2_rescaled, box1_label=box1_class, rel_label=rel_class, box2_label=box2_class, scores=scores)
-			self._vg_metrics.record_groundtruth(
-					image_ids=image_ids,
-					box1=gt_bboxes1_rescaled, box2=gt_bboxes2_rescaled,
-					box1_label=gt_box1_classes, rel_label=gt_rel_classes, box2_label=gt_box2_classes)
+			# Log/accumulate metrics.
+			if self._vg_metrics:
+				self._vg_metrics.record_prediction(
+						image_ids=image_ids, box1=pred_bbox1_rescaled, box2=pred_bbox2_rescaled, box1_label=box1_class, rel_label=rel_class, box2_label=box2_class, scores=scores)
+				self._vg_metrics.record_groundtruth(
+						image_ids=image_ids,
+						box1=gt_bboxes1_rescaled, box2=gt_bboxes2_rescaled,
+						box1_label=gt_box1_classes, rel_label=gt_rel_classes, box2_label=gt_box2_classes)
 
-		# Image summary.
-		if eval_step <= 10 or ret_results:
-			image_ids_ = image_ids.numpy()
-			gt_tuple = (gt_bboxes1, gt_box1_classes, scores[..., 0] * 0. + 1., 'gt')  # pylint: disable=unused-variable
-			pred_tuple = (pred_bbox1, box1_class, scores[..., 0], 'pred')
-			vis_list = [pred_tuple]  # exclude gt for simplicity.
-			ret_images = {}
-			for bboxes_, classes_, scores_, tag_ in vis_list:
-				tag = summary_tag + '/' + task_utils.join_if_not_none(
-						[tag_, 'bbox', eval_step], '_')
-				bboxes_, classes_, scores_ = (
-						bboxes_.numpy(), classes_.numpy(), scores_.numpy())
-				images_ = np.copy(tf.image.convert_image_dtype(images, tf.uint8))
-				ret_images[tag_] = add_image_summary_with_bbox(
-						images_, bboxes_, classes_, scores_, self._category_names,
-						image_ids_, train_step, tag,
-						max_images_shown=(-1 if ret_results else 3))
+			# Image summary.
+			if eval_step <= 10 or ret_results:
+				image_ids_ = image_ids.numpy()
+				gt_tuple = (gt_bboxes1, gt_box1_classes, scores[..., 0] * 0. + 1., 'gt')  # pylint: disable=unused-variable
+				pred_tuple = (pred_bbox1, box1_class, scores[..., 0], 'pred')
+				vis_list = [pred_tuple]  # exclude gt for simplicity.
+				ret_images = {}
+				for bboxes_, classes_, scores_, tag_ in vis_list:
+					tag = summary_tag + '/' + task_utils.join_if_not_none(
+							[tag_, 'bbox', eval_step], '_')
+					bboxes_, classes_, scores_ = (
+							bboxes_.numpy(), classes_.numpy(), scores_.numpy())
+					images_ = np.copy(tf.image.convert_image_dtype(images, tf.uint8))
+					ret_images[tag_] = add_image_summary_with_bbox(
+							images_, bboxes_, classes_, scores_, self._category_names,
+							image_ids_, train_step, tag,
+							max_images_shown=(-1 if ret_results else 3))
 
-		logging.info('Done post-process')
-		if ret_results:
-			return ret_images
+			logging.info('Done post-process')
+			if ret_results:
+				return ret_images
 
 	def evaluate(self, summary_writer, step, eval_tag):
 		"""Evaluate results on accumulated outputs (after multiple infer steps).
@@ -315,32 +316,32 @@ class TaskSceneGraphGeneration(task_lib.Task):
 			with tf.name_scope(eval_tag):
 				self._log_metrics(metrics, step)
 			summary_writer.flush()
-		result_json_path = os.path.join(
-				self.config.model_dir, eval_tag + 'cocoeval.pkl')
-		if self._vg_metrics:
-			tosave = {'dataset': self._vg_metrics.dataset,
-								'detections': np.array(self._vg_metrics.detections)}
-			with tf.io.gfile.GFile(result_json_path, 'wb') as f:
-				pickle.dump(tosave, f)
+		# result_json_path = os.path.join(
+		# 		self.config.model_dir, eval_tag + 'cocoeval.pkl')
+		# if self._vg_metrics:
+		# 	tosave = {'dataset': self._vg_metrics.dataset,
+		# 						'detections': np.array(self._vg_metrics.detections)}
+		# 	with tf.io.gfile.GFile(result_json_path, 'wb') as f:
+		# 		pickle.dump(tosave, f)
 		self.reset_metrics()
-		if self.config.task.get('eval_outputs_json_path', None):
-			annotations_to_save = {
-					'annotations': self.eval_output_annotations,
-					'categories': list(self._category_names.values())
-			}
-			json_path = self.config.task.eval_outputs_json_path.format(
-					eval_split=self.config.dataset.eval_split,
-					top_p=self.config.task.top_p,
-					max_instances_per_image_test=self.config.task
-					.max_instances_per_image_test,
-					step=int(step))
-			tf.io.gfile.makedirs(os.path.basename(json_path))
-			logging.info('Saving %d result annotations to %s',
-									 len(self.eval_output_annotations),
-									 json_path)
-			with tf.io.gfile.GFile(json_path, 'w') as f:
-				json.dump(annotations_to_save, f)
-			self.eval_output_annotations = []
+		# if self.config.task.get('eval_outputs_json_path', None):
+		# 	annotations_to_save = {
+		# 			'annotations': self.eval_output_annotations,
+		# 			'categories': list(self._category_names.values())
+		# 	}
+		# 	json_path = self.config.task.eval_outputs_json_path.format(
+		# 			eval_split=self.config.dataset.eval_split,
+		# 			top_p=self.config.task.top_p,
+		# 			max_instances_per_image_test=self.config.task
+		# 			.max_instances_per_image_test,
+		# 			step=int(step))
+		# 	tf.io.gfile.makedirs(os.path.basename(json_path))
+		# 	logging.info('Saving %d result annotations to %s',
+		# 							 len(self.eval_output_annotations),
+		# 							 json_path)
+		# 	with tf.io.gfile.GFile(json_path, 'w') as f:
+		# 		json.dump(annotations_to_save, f)
+		# 	self.eval_output_annotations = []
 		return metrics
 
 	def compute_scalar_metrics(self, step):

@@ -1,0 +1,1 @@
+dict_keys(['object_count', 'idx_to_label', 'predicate_to_idx', 'predicate_count', 'idx_to_predicate', 'label_to_idx', 'attribute_count', 'idx_to_attribute', 'attribute_to_idx'])

@@ -8,13 +8,13 @@ from functools import reduce
 from pycocotools.coco import COCO
 from pycocotools.cocoeval import COCOeval
 
-from sgg_eval import SGRecall, SGNoGraphConstraintRecall, SGZeroShotRecall, SGPairAccuracy, SGMeanRecall, SGAccumulateRecall
-from sgg_eval import SGConfMat
-from sgg_eval import SGAmountInfo, SGMeanRecallInfoContent
+from .sgg_eval import SGRecall, SGNoGraphConstraintRecall, SGZeroShotRecall, SGPairAccuracy, SGMeanRecall, SGAccumulateRecall
+from .sgg_eval import SGConfMat
+from .sgg_eval import SGMeanRecallInfoContent
 def do_vg_evaluation(
-    # cfg,
-    dataset,
+    ind_to_classes, ind_to_predicates,
     predictions,
+    groundtruths,
     output_folder,
     logger,
     iou_types,
@@ -40,24 +40,13 @@ def do_vg_evaluation(
     iou_thres = 0.5
     assert mode in {'predcls', 'sgdet', 'sgcls', 'phrdet', 'preddet'}
 
-    groundtruths = []
-    for image_id, prediction in enumerate(predictions):
-        img_info = dataset.get_img_info(image_id)
-        image_width = img_info["width"]
-        image_height = img_info["height"]
-        # recover original size which is before transform
-        predictions[image_id] = prediction.resize((image_width, image_height))
-
-        gt = dataset.get_groundtruth(image_id, evaluation=True)
-        groundtruths.append(gt)
-
-    save_output(output_folder, groundtruths, predictions, dataset)
+    # save_output(output_folder, groundtruths, predictions, dataset)
     
     result_str = '\n' + '=' * 100 + '\n'
     if "bbox" in iou_types:
         # create a Coco-like object that we can use to evaluate detection!
         anns = []
-        for image_id, gt in enumerate(groundtruths):
+        for image_id, gt in groundtruths.items():
             labels = gt.get_field('labels').tolist() # integer
             boxes = gt.bbox.tolist() # xyxy
             for cls, box in zip(labels, boxes):
@@ -72,10 +61,10 @@ def do_vg_evaluation(
         fauxcoco = COCO()
         fauxcoco.dataset = {
             'info': {'description': 'use coco script for vg detection evaluation'},
-            'images': [{'id': i} for i in range(len(groundtruths))],
+            'images': [{'id': i} for i in groundtruths.keys()],
             'categories': [
                 {'supercategory': 'person', 'id': i, 'name': name} 
-                for i, name in enumerate(dataset.ind_to_classes) if name != '__background__'
+                for i, name in enumerate(ind_to_classes) if name != '__background__'
                 ],
             'annotations': anns,
         }
@@ -83,7 +72,7 @@ def do_vg_evaluation(
 
         # format predictions to coco-like
         cocolike_predictions = []
-        for image_id, prediction in enumerate(predictions):
+        for image_id, prediction in predictions.items():
             box = prediction.convert('xywh').bbox.detach().cpu().numpy() # xywh
             score = prediction.get_field('pred_scores').detach().cpu().numpy() # (#objs,)
             label = prediction.get_field('pred_labels').detach().cpu().numpy() # (#objs,)
@@ -118,7 +107,7 @@ def do_vg_evaluation(
         eval_recall.register_container(mode)
         evaluator['eval_recall'] = eval_recall
 
-        eval_recall_info = SGMeanRecallInfoContent(result_dict, num_rel_category, dataset.ind_to_predicates)
+        eval_recall_info = SGMeanRecallInfoContent(result_dict, num_rel_category, ind_to_predicates)
         eval_recall_info.register_container(mode)
         evaluator['eval_mean_recall_information_content'] = eval_recall_info
 
@@ -138,11 +127,11 @@ def do_vg_evaluation(
         evaluator['eval_pair_accuracy'] = eval_pair_accuracy
 
         # used for meanRecall@K
-        eval_mean_recall = SGMeanRecall(result_dict, num_rel_category, dataset.ind_to_predicates, print_detail=True)
+        eval_mean_recall = SGMeanRecall(result_dict, num_rel_category, ind_to_predicates, print_detail=True)
         eval_mean_recall.register_container(mode)
         evaluator['eval_mean_recall'] = eval_mean_recall
         if mode != 'sgdet':
-            eval_conf_mat = SGConfMat(result_dict, num_rel_category, dataset.ind_to_predicates)
+            eval_conf_mat = SGConfMat(result_dict, num_rel_category, ind_to_predicates)
             eval_conf_mat.register_container(mode)
             evaluator['eval_confusion_matrix'] = eval_conf_mat
 

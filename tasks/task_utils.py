@@ -184,20 +184,20 @@ def decode_seq_to_triplets(logits,
   # Chunk the sequence into triplets (length 12).
   pred_seq = tf.reshape(pred_seq, [-1, pred_seq.shape[-1] // triplet_len, triplet_len])
   logits = tf.reshape(logits, [-1, logits.shape[-2] // triplet_len, triplet_len, logits.shape[-1]])
-  print(pred_seq.shape)
+  # print(pred_seq.shape)
   pred_class_p = tf.nn.softmax(tf.gather(logits, indices=[4, 6, 12], axis=2)) # (bsz, instances, triplet_len, vocab_size)
-  print(pred_class_p.shape)
+  # print(pred_class_p.shape)
   mask_s1 = [0.] * vocab.BASE_VOCAB_SHIFT  # reserved.
   mask_s2 = [1.] * (coord_vocab_shift - vocab.BASE_VOCAB_SHIFT)  # labels.
   mask_s3 = [0] * (vocab_size - coord_vocab_shift)  # coordinates and others.
   mask = tf.constant(mask_s1 + mask_s2 + mask_s3)
-  print(mask.shape)
+  # print(mask.shape)
   pred_class = tf.argmax(pred_class_p * mask[tf.newaxis, tf.newaxis, tf.newaxis, :], -1)
-  print(pred_class.shape)
+  # print(pred_class.shape)
   pred_score = tf.reduce_sum(
       pred_class_p * tf.one_hot(pred_class, vocab_size), -1)
   pred_class = tf.maximum(pred_class - vocab.BASE_VOCAB_SHIFT, 0)
-  print(pred_class.shape)
+  # print(pred_class.shape)
   pred_bbox1, pred_bbox2 = triplet_seq_to_bbox(pred_seq - coord_vocab_shift, quantization_bins)
 
   box1_class, rel_class, box2_class = tf.split(pred_class, 3, axis=-1)
@@ -234,11 +234,11 @@ def triplet_seq_to_bbox(seq, quantization_bins, seq_format='yxyx_name'):
   # [batch, num_instances, triplet_len]
   box1_seq = tf.reshape(tf.gather(seq, indices=[0, 1, 2, 3, 4], axis=2), [-1, 5 * seq.shape[1]])
   box2_seq = tf.reshape(tf.gather(seq, indices=[7, 8, 9, 10, 11], axis=2), [-1, 5 * seq.shape[1]])
-  print(box1_seq.shape)
+  # print(box1_seq.shape)
 
   box1 = seq_to_bbox(box1_seq, quantization_bins, seq_format)
   box2 = seq_to_bbox(box2_seq, quantization_bins, seq_format)
-  print(box1.shape)
+  # print(box1.shape)
   return box1, box2
 
 def compute_weighted_scores(bbox_scores, pred_seq, logits,
