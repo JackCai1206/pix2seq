@@ -388,7 +388,7 @@ class SGMeanRecall(SceneGraphEvaluation):
 
         self.num_rel_category = num_rel
         self.ind_to_predicates = ind_to_predicates
-        vg_dict_info = json.load(open('./datasets/vg/VG-SGG-dicts-with-attri-info.json','r'))
+        vg_dict_info = json.load(open('/data/hulab/zcai75/visual_genome/vg_motif_anno/VG-SGG-dicts-with-attri.json','r'))
         predicates_info = vg_dict_info['predicate_information']
         pred_vg_info_arr = []
         for i in range(len(self.ind_to_predicates)):
@@ -399,25 +399,25 @@ class SGMeanRecall(SceneGraphEvaluation):
                 pred_vg_info_arr.append(0.0)
         self.pred_vg_info_arr = np.array(pred_vg_info_arr)
 
-        wiki_dict_info = json.load(open('./datasets/vg/WIKIPEDIA-info.json','r'))
-        predicates_wiki_info = wiki_dict_info['predicate_wiki_information']
-        pred_wiki_info_arr = []
-        for i in range(len(self.ind_to_predicates)):
-            pred_i = self.ind_to_predicates[i]
-            if pred_i in predicates_wiki_info:
-                pred_wiki_info_arr.append(predicates_wiki_info[pred_i])
-            else:
-                pred_wiki_info_arr.append(0.0)
-        self.pred_wiki_info_arr = np.array(pred_wiki_info_arr)
+        # wiki_dict_info = json.load(open('./datasets/vg/WIKIPEDIA-info.json','r'))
+        # predicates_wiki_info = wiki_dict_info['predicate_wiki_information']
+        # pred_wiki_info_arr = []
+        # for i in range(len(self.ind_to_predicates)):
+        #     pred_i = self.ind_to_predicates[i]
+        #     if pred_i in predicates_wiki_info:
+        #         pred_wiki_info_arr.append(predicates_wiki_info[pred_i])
+        #     else:
+        #         pred_wiki_info_arr.append(0.0)
+        # self.pred_wiki_info_arr = np.array(pred_wiki_info_arr)
 
     def register_container(self, mode):
-        #self.result_dict[mode + '_recall_hit'] = {20: [0]*self.num_rel, 50: [0]*self.num_rel, 100: [0]*self.num_rel}
-        #self.result_dict[mode + '_recall_count'] = {20: [0]*self.num_rel, 50: [0]*self.num_rel, 100: [0]*self.num_rel}
+        self.result_dict[mode + '_recall_hit'] = {20: [0]*self.num_rel, 50: [0]*self.num_rel, 100: [0]*self.num_rel}
+        self.result_dict[mode + '_recall_count'] = {20: [0]*self.num_rel, 50: [0]*self.num_rel, 100: [0]*self.num_rel}
         self.result_dict[mode + '_mean_recall'] = {20: 0.0, 50: 0.0, 100: 0.0}
         self.result_dict[mode + '_mean_recall_collect'] = {20: [[] for i in range(self.num_rel)], 50: [[] for i in range(self.num_rel)], 100: [[] for i in range(self.num_rel)]}
         self.result_dict[mode + '_mean_recall_list'] = {20: [], 50: [], 100: []}
-        self.result_dict[mode + '_mean_recall_information_content_vg'] = {20: 0.0, 50: 0.0, 100: 0.0}
-        self.result_dict[mode + '_mean_recall_information_content_wiki'] = {20: 0.0, 50: 0.0, 100: 0.0}
+        # self.result_dict[mode + '_mean_recall_information_content_vg'] = {20: 0.0, 50: 0.0, 100: 0.0}
+        # self.result_dict[mode + '_mean_recall_information_content_wiki'] = {20: 0.0, 50: 0.0, 100: 0.0}
     def generate_print_string(self, mode):
         result_str = 'SGG eval: '
         for k, v in self.result_dict[mode + '_mean_recall'].items():
@@ -430,14 +430,14 @@ class SGMeanRecall(SceneGraphEvaluation):
             result_str += '\n'
             
             
-        for k, v in self.result_dict[mode + '_mean_recall_information_content_vg'].items():
-            result_str += ' mRIC VG @ %d: %.4f; ' % (k, float(v))
-        result_str += ' for mode=%s, type=mRIC.' % mode
-        result_str += '\n'
-        for k, v in self.result_dict[mode + '_mean_recall_information_content_wiki'].items():
-            result_str += ' mRIC Wiki @ %d: %.4f; ' % (k, float(v))
-        result_str += ' for mode=%s, type=mRIC.' % mode
-        result_str += '\n'
+        # for k, v in self.result_dict[mode + '_mean_recall_information_content_vg'].items():
+        #     result_str += ' mRIC VG @ %d: %.4f; ' % (k, float(v))
+        # result_str += ' for mode=%s, type=mRIC.' % mode
+        # result_str += '\n'
+        # for k, v in self.result_dict[mode + '_mean_recall_information_content_wiki'].items():
+        #     result_str += ' mRIC Wiki @ %d: %.4f; ' % (k, float(v))
+        # result_str += ' for mode=%s, type=mRIC.' % mode
+        # result_str += '\n'
         return result_str
 
     def collect_mean_recall_items(self, global_container, local_container, mode):
@@ -479,10 +479,10 @@ class SGMeanRecall(SceneGraphEvaluation):
                 sum_recall += tmp_recall
 
             self.result_dict[mode + '_mean_recall'][k] = sum_recall / float(num_rel_no_bg)
-            self.result_dict[mode + '_mean_recall_information_content_vg'][k] = \
-            np.mean(self.result_dict[mode + '_mean_recall_list'][k] * self.self.pred_vg_info_arr)
-            self.result_dict[mode + '_mean_recall_information_content_wiki'][k] = \
-            np.mean(self.result_dict[mode + '_mean_recall_list'][k] * self.self.pred_wiki_info_arr)
+            # self.result_dict[mode + '_mean_recall_information_content_vg'][k] = \
+            # np.mean(self.result_dict[mode + '_mean_recall_list'][k] * self.self.pred_vg_info_arr)
+            # self.result_dict[mode + '_mean_recall_information_content_wiki'][k] = \
+            # np.mean(self.result_dict[mode + '_mean_recall_list'][k] * self.self.pred_wiki_info_arr)
         return
 
 """

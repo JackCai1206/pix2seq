@@ -29,7 +29,7 @@ def get_config(config_str=None):
 
   task_variant = 'scene_graph_generation@visual_genome'
   encoder_variant = 'resnet'                 # Set model architecture.
-  image_size = (480, 480)                   # Set image size.
+  image_size = (500, 500)                   # Set image size.
 
   tasks_and_datasets = []
   for task_and_ds in task_variant.split('+'):

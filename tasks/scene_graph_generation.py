@@ -205,6 +205,7 @@ class TaskSceneGraphGeneration(task_lib.Task):
 		images, image_ids = features['image'], features['image/id']
 		orig_image_size = features['orig_image_size']
 		unpadded_image_size = features['unpadded_image_size']
+		# tf.print(unpadded_image_size, orig_image_size)
 
 		# Decode sequence output.
 		box1_class, rel_class, box2_class, pred_bbox1, pred_bbox2, scores = task_utils.decode_seq_to_triplets(
@@ -225,10 +226,10 @@ class TaskSceneGraphGeneration(task_lib.Task):
 		pred_bbox1_rescaled = utils.scale_points(pred_bbox1, scale)
 		pred_bbox2_rescaled = utils.scale_points(pred_bbox2, scale)
 
-		print(labels)
-		gt_box1_classes, gt_rel_classes, gt_box2_classes, gt_bboxes1, gt_bboxes2 = labels['box1_label'], labels['pred_label'], labels['box2_label'], labels['box1'], labels['box2']
+		gt_box1_classes, gt_rel_classes, gt_box2_classes, gt_bboxes1, gt_bboxes2 = labels['box1_id'], labels['pred'], labels['box2_id'], labels['box1'], labels['box2']
 		gt_bboxes1_rescaled = utils.scale_points(gt_bboxes1, scale)
 		gt_bboxes2_rescaled = utils.scale_points(gt_bboxes2, scale)
+		# tf.print(pred_bbox1_rescaled[0], gt_bboxes1_rescaled[0], pred_bbox1[0], gt_bboxes1[0], scale)
 		# area, is_crowd = labels['area'], labels['is_crowd']
 
 		return (images, image_ids,

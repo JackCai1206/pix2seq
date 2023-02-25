@@ -17,15 +17,28 @@ flags.DEFINE_string('vg_image_dir', '', 'Directory containing images.')
 flags.DEFINE_string('vg_ann_file', '', 'Instance annotation file.')
 flags.DEFINE_string('image_data_file', '', 'Image data file.')
 flags.DEFINE_string('vg_ann_label_file', '', 'Json containing label information')
-flags.DEFINE_bool('train', False, 'Is train split.')
+flags.DEFINE_string('split', "train", 'Train/val split.')
 flags.DEFINE_string('output_dir', '', 'Output directory')
 flags.DEFINE_integer('num_shards', 32, 'Number of shards for output file.')
 FLAGS = flags.FLAGS
 
+def scale_coords(coords, size, box_size=1024):
+	# Input box format: x_center, y_center, width, height (scaled so that largest image dimension is 1024)
+	# Desired format: x_left, y_top, x_right, y_bottom (using original image dimensions)
+	coords = tf.cast(coords, tf.float32).numpy()
+	w,h = size
+	scale = max(w,h) / box_size
+	coords = coords * scale
+	box_coords = coords.copy()
+	box_coords[...,:2] -= .5 * box_coords[...,2:]
+	box_coords[...,2:] += box_coords[...,:2]
+	box_coords = (box_coords + .5).astype(np.int32)
+	return tf.constant(box_coords)
+
 def create_anno_iter(img_data, label_data, ann):
 	skipped = 0
 	for j, img in enumerate(tqdm(img_data)):
-		split = 0 if FLAGS.train else 2
+		split = 0 if FLAGS.split == "train" else 2
 		if ann['split'][j] != split:
 			skipped += 1
 			continue
@@ -43,14 +56,16 @@ def create_anno_iter(img_data, label_data, ann):
 			skipped += 1
 			continue
 
-		box1_ids = img_rels[:, 0]
-		box2_ids = img_rels[:, 1]
+		box1_ids = [ann['labels'][i][0] for i in img_rels[:, 0]]
+		box2_ids = [ann['labels'][i][0] for i in img_rels[:, 1]]
 		pred_ids = ann['predicates'][first_rel : last_rel+1]
 		box1 = tf.constant([ann['boxes_1024'][i] for i in box1_ids])
 		box2 = tf.constant([ann['boxes_1024'][i] for i in box2_ids])
+		box1 = scale_coords(box1, (img['width'], img['height']))
+		box2 = scale_coords(box2, (img['width'], img['height']))
 		pred_label = [label_data['idx_to_predicate'][str(i[0])].encode('utf-8') for i in pred_ids]
-		box1_label = [label_data['idx_to_label'][str(ann['labels'][i][0])].encode('utf-8') for i in box1_ids]
-		box2_label = [label_data['idx_to_label'][str(ann['labels'][i][0])].encode('utf-8') for i in box2_ids]
+		box1_label = [label_data['idx_to_label'][str(i)].encode('utf-8') for i in box1_ids]
+		box2_label = [label_data['idx_to_label'][str(i)].encode('utf-8') for i in box2_ids]
 
 		feature_dict.update({
 			'box1': tfrecord_lib.convert_to_feature(tf.io.serialize_tensor(box1).numpy(), 'bytes'),
@@ -65,7 +80,6 @@ def create_anno_iter(img_data, label_data, ann):
 
 		yield feature_dict, skipped
 		skipped = 0
-		# break
 
 def create_example(feature_dict, skipped):
 	example = tf.train.Example(features=tf.train.Features(feature=feature_dict))

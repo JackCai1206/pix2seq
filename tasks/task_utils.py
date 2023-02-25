@@ -199,6 +199,7 @@ def decode_seq_to_triplets(logits,
   pred_class = tf.maximum(pred_class - vocab.BASE_VOCAB_SHIFT, 0)
   # print(pred_class.shape)
   pred_bbox1, pred_bbox2 = triplet_seq_to_bbox(pred_seq - coord_vocab_shift, quantization_bins)
+  # tf.print(pred_bbox1, pred_bbox2)
 
   box1_class, rel_class, box2_class = tf.split(pred_class, 3, axis=-1)
 

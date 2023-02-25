@@ -7,6 +7,7 @@ from tqdm import tqdm
 from functools import reduce
 from pycocotools.coco import COCO
 from pycocotools.cocoeval import COCOeval
+import tensorflow as tf
 
 from .sgg_eval import SGRecall, SGNoGraphConstraintRecall, SGZeroShotRecall, SGPairAccuracy, SGMeanRecall, SGAccumulateRecall
 from .sgg_eval import SGConfMat
@@ -41,56 +42,67 @@ def do_vg_evaluation(
     assert mode in {'predcls', 'sgdet', 'sgcls', 'phrdet', 'preddet'}
 
     # save_output(output_folder, groundtruths, predictions, dataset)
-    
+
     result_str = '\n' + '=' * 100 + '\n'
     if "bbox" in iou_types:
         # create a Coco-like object that we can use to evaluate detection!
         anns = []
+        ann_id = 0
         for image_id, gt in groundtruths.items():
             labels = gt.get_field('labels').tolist() # integer
             boxes = gt.bbox.tolist() # xyxy
             for cls, box in zip(labels, boxes):
-                anns.append({
-                    'area': (box[3] - box[1] + 1) * (box[2] - box[0] + 1),
-                    'bbox': [box[0], box[1], box[2] - box[0] + 1, box[3] - box[1] + 1], # xywh
-                    'category_id': cls,
-                    'id': len(anns),
-                    'image_id': image_id,
-                    'iscrowd': 0,
-                })
+                # tf.print(cls, box)
+                if cls != 0:
+                    anns.append({
+                        'area': (box[3] - box[1] + 1) * (box[2] - box[0] + 1),
+                        'bbox': [box[0], box[1], box[2] - box[0] + 1, box[3] - box[1] + 1], # xywh
+                        'category_id': cls,
+                        'id': ann_id,
+                        'image_id': image_id,
+                        'iscrowd': 0,
+                    })
+                    ann_id += 1
         fauxcoco = COCO()
         fauxcoco.dataset = {
             'info': {'description': 'use coco script for vg detection evaluation'},
             'images': [{'id': i} for i in groundtruths.keys()],
             'categories': [
-                {'supercategory': 'person', 'id': i, 'name': name} 
-                for i, name in enumerate(ind_to_classes) if name != '__background__'
+                {'id': int(i), 'name': name} 
+                for i, name in ind_to_classes.items() if name != '__background__'
                 ],
             'annotations': anns,
         }
+        # tf.print(fauxcoco.dataset)
         fauxcoco.createIndex()
 
+        
         # format predictions to coco-like
         cocolike_predictions = []
         for image_id, prediction in predictions.items():
             box = prediction.convert('xywh').bbox.detach().cpu().numpy() # xywh
-            score = prediction.get_field('pred_scores').detach().cpu().numpy() # (#objs,)
-            label = prediction.get_field('pred_labels').detach().cpu().numpy() # (#objs,)
             # for predcls, we set label and score to groundtruth
             if mode == 'predcls':
-                label = prediction.get_field('labels').detach().cpu().numpy()
+                # label = prediction.get_field('labels').detach().cpu().numpy()
+                label = prediction.get_field('labels')
                 score = np.ones(label.shape[0])
                 assert len(label) == len(box)
+            else:
+                score = prediction.get_field('pred_scores') # (#objs,)
+                label = prediction.get_field('pred_labels') # (#objs,)
+
             image_id = np.asarray([image_id]*len(box))
+            not_empty = label != 0
             cocolike_predictions.append(
-                np.column_stack((image_id, box, score, label))
+                np.column_stack((image_id[not_empty], box[not_empty], score[not_empty], label[not_empty]))
                 )
-            # logger.info(cocolike_predictions)
+            # tf.print(label, box)
         cocolike_predictions = np.concatenate(cocolike_predictions, 0)
         # evaluate via coco API
         res = fauxcoco.loadRes(cocolike_predictions)
+        # tf.print(fauxcoco.anns, res.anns)
         coco_eval = COCOeval(fauxcoco, res, 'bbox')
-        coco_eval.params.imgIds = list(range(len(groundtruths)))
+        coco_eval.params.imgIds = list(groundtruths.keys())
         coco_eval.evaluate()
         coco_eval.accumulate()
         coco_eval.summarize()
@@ -100,6 +112,9 @@ def do_vg_evaluation(
         result_str += '=' * 100 + '\n'
 
     if "relations" in iou_types:
+        # convert ind_to_predicates to list
+        ind_to_predicates.update({'0':'__background__'}) # add background
+        ind_to_predicates = [ind_to_predicates[str(i)] for i in range(len(ind_to_predicates))]
         result_dict = {}
         evaluator = {}
         # tradictional Recall@K
@@ -107,9 +122,9 @@ def do_vg_evaluation(
         eval_recall.register_container(mode)
         evaluator['eval_recall'] = eval_recall
 
-        eval_recall_info = SGMeanRecallInfoContent(result_dict, num_rel_category, ind_to_predicates)
-        eval_recall_info.register_container(mode)
-        evaluator['eval_mean_recall_information_content'] = eval_recall_info
+        # eval_recall_info = SGMeanRecallInfoContent(result_dict, num_rel_category, ind_to_predicates)
+        # eval_recall_info.register_container(mode)
+        # evaluator['eval_mean_recall_information_content'] = eval_recall_info
 
         # no graphical constraint
         eval_nog_recall = SGNoGraphConstraintRecall(result_dict)
@@ -117,9 +132,9 @@ def do_vg_evaluation(
         evaluator['eval_nog_recall'] = eval_nog_recall
 
         # test on different distribution
-        eval_zeroshot_recall = SGZeroShotRecall(result_dict)
-        eval_zeroshot_recall.register_container(mode)
-        evaluator['eval_zeroshot_recall'] = eval_zeroshot_recall
+        # eval_zeroshot_recall = SGZeroShotRecall(result_dict)
+        # eval_zeroshot_recall.register_container(mode)
+        # evaluator['eval_zeroshot_recall'] = eval_zeroshot_recall
         
         # used by https://github.com/NVIDIA/ContrastiveLosses4VRD for sgcls and predcls
         eval_pair_accuracy = SGPairAccuracy(result_dict)
@@ -155,9 +170,9 @@ def do_vg_evaluation(
         
         # print result
         result_str += eval_recall.generate_print_string(mode)
-        result_str += eval_recall_info.generate_print_string(mode)
+        # result_str += eval_recall_info.generate_print_string(mode)
         result_str += eval_nog_recall.generate_print_string(mode)
-        result_str += eval_zeroshot_recall.generate_print_string(mode)
+        # result_str += eval_zeroshot_recall.generate_print_string(mode)
         result_str += eval_mean_recall.generate_print_string(mode)
         # if cfg.MODEL.ROI_RELATION_HEAD.USE_GT_BOX:
         result_str += eval_pair_accuracy.generate_print_string(mode)

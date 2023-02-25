@@ -29,33 +29,39 @@ class VGSGGRecallMetric():
             self.groundtruths[k].extend(tf.squeeze(tf.unstack(v, axis=0)))
     
     def result(self, step):
-        predictions = {}
+        predictions: dict[str, BoxList] = {}
         for i, img_id in enumerate(self.predictions['image_ids']):
             img_id = img_id.numpy()
             labels = tf.concat([self.predictions['box1_label'][i], self.predictions['box2_label'][i]], axis=0).numpy()
             boxes = tf.concat([self.predictions['box1'][i], self.predictions['box2'][i]], axis=0).numpy()
             scores = tf.concat([self.predictions['scores'][i][..., 0], self.predictions['scores'][i][..., 2]], axis=0).numpy()
+            rel_tuples = tf.concat([self.predictions['box1_label'][i], self.predictions['box2_label'][i]], axis=0).numpy()
+
             # unique_idx = tf.unique(boxes)[1]
             # unique_boxes = tf.gather(boxes, unique_idx)
             predictions[img_id] = BoxList(torch.tensor(boxes), self.config.task.image_size, mode='xyxy')
             predictions[img_id] = predictions[img_id].resize(self.config.task.image_size)
-            predictions[img_id].add_field('pred_labels', torch.tensor(labels))
-            predictions[img_id].add_field('pred_scores', torch.tensor(scores))
-            # predictions[img_id].add_field('rel_pair_idxs', )
+            predictions[img_id].add_field('pred_labels', labels)
+            predictions[img_id].add_field('pred_scores', scores)
+            predictions[img_id].add_field('rel_pair_idxs', rel_tuples)
 
-        groundtruths = {}
+        groundtruths: dict[str, BoxList] = {}
         for i, img_id in enumerate(self.groundtruths['image_ids']):
             img_id = img_id.numpy()
             labels = tf.concat([self.groundtruths['box1_label'][i], self.groundtruths['box2_label'][i]], axis=0).numpy()
             boxes = tf.concat([self.groundtruths['box1'][i], self.groundtruths['box2'][i]], axis=0).numpy()
+            rel_tuples = tf.concat([self.groundtruths['box1_label'][i], self.groundtruths['box2_label'][i]], axis=0).numpy()
             # unique_idx = tf.unique(labels)[1]
             # unique_boxes = tf.gather(boxes, unique_idx)
             groundtruths[img_id] = BoxList(torch.tensor(boxes), self.config.task.image_size, mode='xyxy')
-            groundtruths[img_id] = predictions[img_id].resize(self.config.task.image_size)
+            groundtruths[img_id] = groundtruths[img_id].resize(self.config.task.image_size)
             groundtruths[img_id].add_field('labels', labels)
             groundtruths[img_id].add_field('gt_rels', self.groundtruths['rel_label'][i])
+            groundtruths[img_id].add_field('relation_tuple', rel_tuples)
 
-        mAP = do_vg_evaluation(self.ind_to_classes, self.ind_to_predicates, predictions, groundtruths, None, logging, ['bbox'])
+        # tf.print(list(predictions.values())[0].bbox, list(groundtruths.values())[0].bbox)
+        # tf.print(list(predictions.keys()), list(groundtruths.keys()))
+        mAP = do_vg_evaluation(self.ind_to_classes, self.ind_to_predicates, predictions, groundtruths, None, logging, ['bbox', 'relations'])
 
         return {'mAP': mAP}
     

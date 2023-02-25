@@ -112,7 +112,6 @@ class Trainer(abc.ABC):
         grads = grads_t if i == 0 else [
             g + gt for g, gt in zip(grads, grads_t)]
     self._optimizer.apply_gradients(zip(grads, trainable_variables))
-
     # Update metrics.
     self._metrics['loss'].update_state(loss)
     for k, v in task_loss_metrics.items():
