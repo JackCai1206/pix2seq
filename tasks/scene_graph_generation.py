@@ -136,7 +136,7 @@ class TaskSceneGraphGeneration(task_lib.Task):
 				labels['box1'], labels['box2'],
 				labels['box1_id'], labels['box2_id'],
 				labels['pred'], config.quantization_bins,
-				config.noise_bbox_weight, mconfig.coord_vocab_shift,
+				config.noise_bbox_weight, mconfig.coord_vocab_shift, self.config.dataset.num_obj_classes,
 				class_label_corruption=config.class_label_corruption)
 		response_seq, response_seq_cm, token_weights = ret
 		prompt_seq = task_utils.build_prompt_seq_from_task_id(
@@ -208,8 +208,8 @@ class TaskSceneGraphGeneration(task_lib.Task):
 		# tf.print(unpadded_image_size, orig_image_size)
 
 		# Decode sequence output.
-		box1_class, rel_class, box2_class, pred_bbox1, pred_bbox2, scores = task_utils.decode_seq_to_triplets(
-				logits, pred_seq, config.quantization_bins, mconfig.coord_vocab_shift)
+		box1_class, rel_class, box2_class, pred_bbox1, pred_bbox2, obj_scores, rel_scores = task_utils.decode_seq_to_triplets(
+				logits, pred_seq, config.quantization_bins, mconfig.coord_vocab_shift, self.config.dataset.num_obj_classes,)
 
 		# Compute coordinate scaling from [0., 1.] to actual pixels in orig image.
 		image_size = images.shape[1:3].as_list()
@@ -233,7 +233,7 @@ class TaskSceneGraphGeneration(task_lib.Task):
 		# area, is_crowd = labels['area'], labels['is_crowd']
 
 		return (images, image_ids,
-				pred_bbox1, pred_bbox2, pred_bbox1_rescaled, pred_bbox2_rescaled, box1_class, rel_class, box2_class, scores,
+				pred_bbox1, pred_bbox2, pred_bbox1_rescaled, pred_bbox2_rescaled, box1_class, rel_class, box2_class, obj_scores, rel_scores,
 				gt_box1_classes, gt_rel_classes, gt_box2_classes, gt_bboxes1, gt_bboxes2, gt_bboxes1_rescaled, gt_bboxes2_rescaled,
 				)
 
@@ -266,14 +266,14 @@ class TaskSceneGraphGeneration(task_lib.Task):
 				logging.info('Copying output at index %d to cpu for cpu post-process', i)
 				new_outputs.append(tf.identity(outputs[i]))
 			(images, image_ids,
-			pred_bbox1, pred_bbox2, pred_bbox1_rescaled, pred_bbox2_rescaled, box1_class, rel_class, box2_class, scores,
+			pred_bbox1, pred_bbox2, pred_bbox1_rescaled, pred_bbox2_rescaled, box1_class, rel_class, box2_class, obj_scores, rel_scores,
 			gt_box1_classes, gt_rel_classes, gt_box2_classes, gt_bboxes1, gt_bboxes2, gt_bboxes1_rescaled, gt_bboxes2_rescaled,
 			) = new_outputs
 
 			# Log/accumulate metrics.
 			if self._vg_metrics:
 				self._vg_metrics.record_prediction(
-						image_ids=image_ids, box1=pred_bbox1_rescaled, box2=pred_bbox2_rescaled, box1_label=box1_class, rel_label=rel_class, box2_label=box2_class, scores=scores)
+						image_ids=image_ids, box1=pred_bbox1_rescaled, box2=pred_bbox2_rescaled, box1_label=box1_class, rel_label=rel_class, box2_label=box2_class, obj_scores=obj_scores, rel_scores=rel_scores)
 				self._vg_metrics.record_groundtruth(
 						image_ids=image_ids,
 						box1=gt_bboxes1_rescaled, box2=gt_bboxes2_rescaled,
@@ -282,8 +282,8 @@ class TaskSceneGraphGeneration(task_lib.Task):
 			# Image summary.
 			if eval_step <= 10 or ret_results:
 				image_ids_ = image_ids.numpy()
-				gt_tuple = (gt_bboxes1, gt_box1_classes, scores[..., 0] * 0. + 1., 'gt')  # pylint: disable=unused-variable
-				pred_tuple = (pred_bbox1, box1_class, scores[..., 0], 'pred')
+				gt_tuple = (gt_bboxes1, gt_box1_classes, obj_scores[..., 0] * 0. + 1., 'gt')  # pylint: disable=unused-variable
+				pred_tuple = (pred_bbox1, box1_class, obj_scores[..., 0], 'pred')
 				vis_list = [pred_tuple]  # exclude gt for simplicity.
 				ret_images = {}
 				for bboxes_, classes_, scores_, tag_ in vis_list:
@@ -389,6 +389,7 @@ def build_response_seq_from_bbox(box1, box2,
 								quantization_bins,
 								noise_bbox_weight,
 								coord_vocab_shift,
+								obj_class_shift,
 								class_label_corruption='rand_cls'):
 	""""Build target seq from bounding bboxes for object detection.
 
@@ -425,6 +426,9 @@ def build_response_seq_from_bbox(box1, box2,
 	new_label2 = tf.where(is_padding, tf.zeros_like(new_label2), new_label2)
 	lb_shape = tf.shape(new_label2)
 
+	pred = tf.expand_dims(pred + vocab.BASE_VOCAB_SHIFT + obj_class_shift, -1)
+	pred = tf.where(is_padding, tf.zeros_like(pred), pred)
+
 	# Bbox and label serialization.
 	# tf.print('qbox1', qbox1.shape)
 	# tf.print('new_label1', new_label1.shape)
@@ -432,7 +436,7 @@ def build_response_seq_from_bbox(box1, box2,
 	# tf.print('pred', tf.expand_dims(pred, -1).shape)
 	response_seq = tf.concat([
 		qbox1, new_label1, tf.broadcast_to(tf.cast(vocab.SUB, tf.int64), new_label1.shape),
-		tf.expand_dims(pred, -1), tf.broadcast_to(tf.cast(vocab.PRED, tf.int64), new_label1.shape),
+		pred, tf.broadcast_to(tf.cast(vocab.PRED, tf.int64), new_label1.shape),
 		qbox2, new_label2, tf.broadcast_to(tf.cast(vocab.OBJ, tf.int64), new_label1.shape),
 		tf.broadcast_to(tf.cast(vocab.TRIPLET, tf.int64), new_label1.shape)], axis=-1)
 	response_seq = utils.flatten_non_batch_dims(response_seq, 2)
@@ -459,7 +463,7 @@ def build_response_seq_from_bbox(box1, box2,
 	new_label_m2 = tf.where(is_padding, tf.zeros_like(new_label_m2), new_label_m2)
 	response_seq_class_m = tf.concat([
 		qbox1, new_label_m1, tf.broadcast_to(tf.cast(vocab.SUB, tf.int64), new_label_m1.shape),
-		tf.expand_dims(pred, -1), tf.broadcast_to(tf.cast(vocab.PRED, tf.int64), new_label_m1.shape),
+		pred, tf.broadcast_to(tf.cast(vocab.PRED, tf.int64), new_label_m1.shape),
 		qbox2, new_label_m2, tf.broadcast_to(tf.cast(vocab.OBJ, tf.int64), new_label_m2.shape),
 		tf.broadcast_to(tf.cast(vocab.TRIPLET, tf.int64), new_label1.shape)], axis=-1)
 	response_seq_class_m = utils.flatten_non_batch_dims(response_seq_class_m, 2)
@@ -473,7 +477,7 @@ def build_response_seq_from_bbox(box1, box2,
 	label2_weight = is_real2 + (1. - is_real2) * noise_bbox_weight
 	token_weights = tf.concat([
 		bbox1_weight, label1_weight, tf.broadcast_to(0., new_label_m1.shape),
-		tf.expand_dims(tf.broadcast_to(1., pred.shape), -1), tf.broadcast_to(0., new_label_m1.shape),
+		tf.broadcast_to(1., pred.shape), tf.broadcast_to(0., new_label_m1.shape),
 		bbox2_weight, label2_weight, tf.broadcast_to(0., new_label_m2.shape)
 		], -1)
 	token_weights = utils.flatten_non_batch_dims(token_weights, 2)

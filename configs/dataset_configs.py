@@ -59,7 +59,8 @@ vg_dataset_config = D(
     eval_num_examples=14,
     train_split='train',
     eval_split='validation',
-    **_shared_dataset_config
+    **_shared_dataset_config,
+    num_obj_classes=200
 )
 
 dataset_configs = {

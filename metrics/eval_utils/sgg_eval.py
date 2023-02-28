@@ -388,16 +388,16 @@ class SGMeanRecall(SceneGraphEvaluation):
 
         self.num_rel_category = num_rel
         self.ind_to_predicates = ind_to_predicates
-        vg_dict_info = json.load(open('/data/hulab/zcai75/visual_genome/vg_motif_anno/VG-SGG-dicts-with-attri.json','r'))
-        predicates_info = vg_dict_info['predicate_information']
-        pred_vg_info_arr = []
-        for i in range(len(self.ind_to_predicates)):
-            pred_i = self.ind_to_predicates[i]
-            if pred_i in predicates_info:
-                pred_vg_info_arr.append(predicates_info[pred_i])
-            else:
-                pred_vg_info_arr.append(0.0)
-        self.pred_vg_info_arr = np.array(pred_vg_info_arr)
+        # vg_dict_info = json.load(open('/data/hulab/zcai75/visual_genome/vg_motif_anno/VG-SGG-dicts-with-attri.json','r'))
+        # predicates_info = vg_dict_info['predicate_information']
+        # pred_vg_info_arr = []
+        # for i in range(len(self.ind_to_predicates)):
+        #     pred_i = self.ind_to_predicates[i]
+        #     if pred_i in predicates_info:
+        #         pred_vg_info_arr.append(predicates_info[pred_i])
+        #     else:
+        #         pred_vg_info_arr.append(0.0)
+        # self.pred_vg_info_arr = np.array(pred_vg_info_arr)
 
         # wiki_dict_info = json.load(open('./datasets/vg/WIKIPEDIA-info.json','r'))
         # predicates_wiki_info = wiki_dict_info['predicate_wiki_information']

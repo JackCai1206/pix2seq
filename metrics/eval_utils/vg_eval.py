@@ -162,6 +162,9 @@ def do_vg_evaluation(
         global_container['attribute_on'] = attribute_on
         global_container['num_attributes'] = num_attributes
 
+        keys = list(groundtruths.keys())
+        groundtruths = [groundtruths[key] for key in keys]
+        predictions = [predictions[key] for key in keys]
         for groundtruth, prediction in zip(groundtruths, predictions):
             evaluate_relation_of_one_image(groundtruth, prediction, global_container, evaluator)
         
@@ -229,7 +232,7 @@ def evaluate_relation_of_one_image(groundtruth, prediction, global_container, ev
     mode = global_container['mode']
 
     local_container = {}
-    local_container['gt_rels'] = groundtruth.get_field('relation_tuple').long().detach().cpu().numpy()
+    local_container['gt_rels'] = groundtruth.get_field('relation_tuple')
 
     # if there is no gt relations for current image, then skip it
     if len(local_container['gt_rels']) == 0:
@@ -255,8 +258,8 @@ def evaluate_relation_of_one_image(groundtruth, prediction, global_container, ev
         evaluator['eval_pair_accuracy'].prepare_gtpair(local_container)
         evaluator['eval_confusion_matrix'].prepare_gtpair(local_container)
 
-        # to calculate the prior label based on statistics
-    evaluator['eval_zeroshot_recall'].prepare_zeroshot(global_container, local_container)
+    # to calculate the prior label based on statistics
+    # evaluator['eval_zeroshot_recall'].prepare_zeroshot(global_container, local_container)
 
     if mode == 'predcls':
         local_container['pred_boxes'] = local_container['gt_boxes']
