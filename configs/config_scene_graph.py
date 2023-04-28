@@ -114,10 +114,10 @@ def get_config(config_str=None):
 
       train=D(
           batch_size=16,
-          epochs=40,
+          epochs=120,
           steps=0,                          # set to >0 to override epochs.
           checkpoint_epochs=1,
-          checkpoint_steps=0,               # set to >0 to override checkpoint_epochs.
+          checkpoint_steps=200,               # set to >0 to override checkpoint_epochs.
           keep_checkpoint_max=5,
           loss_type='xent',
       ),

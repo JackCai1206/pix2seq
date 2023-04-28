@@ -63,14 +63,28 @@ class SGRecall(SceneGraphEvaluation):
         pred_rels = np.column_stack((pred_rel_inds, 1+rel_scores[:,1:].argmax(1)))
         pred_scores = rel_scores[:,1:].max(1)
 
-        gt_triplets, gt_triplet_boxes, _ = _triplet(gt_rels, gt_classes, gt_boxes)
+        # print(gt_rels.shape, gt_classes.shape, gt_boxes.shape)
+        gt_sub_boxes, gt_obj_boxes = np.split(gt_boxes, 2, axis=0)
+        nonzero_mask = gt_rels.sum(dim=1) != 0
+        gt_rels = gt_rels[nonzero_mask]
+        gt_sub_boxes = gt_sub_boxes[nonzero_mask]
+        gt_obj_boxes = gt_obj_boxes[nonzero_mask]
+        gt_triplets, gt_triplet_boxes, _ = _triplet_new(gt_rels, gt_sub_boxes, gt_obj_boxes)
+        # print(gt_triplets.shape, gt_triplet_boxes.shape)
         local_container['gt_triplets'] = gt_triplets
         local_container['gt_triplet_boxes'] = gt_triplet_boxes
 
-        pred_triplets, pred_triplet_boxes, pred_triplet_scores = _triplet(
-                pred_rels, pred_classes, pred_boxes, pred_scores, obj_scores)
+        sub_boxes, obj_boxes = np.split(pred_boxes, 2, axis=0)
+        sub_scores, obj_scores = np.split(obj_scores, 2, axis=0)
+        pred_triplets, pred_triplet_boxes, pred_triplet_scores = _triplet_new(
+                pred_rels, sub_boxes, obj_boxes, pred_scores, sub_scores, obj_scores)
 
+        # print(gt_triplets, pred_triplets)
         # Compute recall. It's most efficient to match once and then do recall after
+        # for i in range(len(gt_triplet_boxes)):
+        #     print(i)
+        #     print(gt_triplet_boxes[i])
+        #     print(pred_triplet_boxes[i])
         pred_to_gt = _compute_pred_matches(
             gt_triplets,
             pred_triplets,
@@ -213,14 +227,26 @@ class SGNoGraphConstraintRecall(SceneGraphEvaluation):
         pred_classes = local_container['pred_classes']
         gt_rels = local_container['gt_rels']
 
-        obj_scores_per_rel = obj_scores[pred_rel_inds].prod(1)
+        # obj_scores_per_rel = obj_scores[pred_rel_inds].prod(1)
+        # print(obj_scores.shape, rel_scores.shape)
+        obj_scores_per_rel = np.stack(np.split(obj_scores, 2), 1).prod(1)
+        # print(obj_scores_per_rel.shape)
         nogc_overall_scores = obj_scores_per_rel[:,None] * rel_scores[:,1:]
+        # print(nogc_overall_scores.shape)
         nogc_score_inds = argsort_desc(nogc_overall_scores)[:100]
+        # print(nogc_score_inds.shape)
         nogc_pred_rels = np.column_stack((pred_rel_inds[nogc_score_inds[:,0]], nogc_score_inds[:,1]+1))
         nogc_pred_scores = rel_scores[nogc_score_inds[:,0], nogc_score_inds[:,1]+1]
 
-        nogc_pred_triplets, nogc_pred_triplet_boxes, _ = _triplet(
-                nogc_pred_rels, pred_classes, pred_boxes, nogc_pred_scores, obj_scores
+        sub_boxes, obj_boxes = np.split(pred_boxes, 2, axis=0)
+        sub_scores, obj_scores = np.split(obj_scores, 2, axis=0)
+        nogc_sub_boxes = sub_boxes[nogc_score_inds[:,0]]
+        nogc_obj_boxes = obj_boxes[nogc_score_inds[:,0]]
+        nogc_sub_scores = sub_scores[nogc_score_inds[:,0]]
+        nogc_obj_scores = obj_scores[nogc_score_inds[:,0]]
+        # print(nogc_pred_rels.shape, sub_boxes.shape, obj_boxes.shape, nogc_pred_scores.shape, sub_scores.shape, obj_scores.shape)
+        nogc_pred_triplets, nogc_pred_triplet_boxes, _ = _triplet_new(
+                nogc_pred_rels, nogc_sub_boxes, nogc_obj_boxes, nogc_pred_scores, nogc_sub_scores, nogc_obj_scores
         )
 
         # No Graph Constraint
@@ -510,6 +536,28 @@ class SGAccumulateRecall(SceneGraphEvaluation):
 
         return 
 
+
+def _triplet_new(relations, sub_boxes, obj_boxes, rel_scores=None, sub_scores=None, obj_scores=None):
+    """
+    parameters:
+        relations (#rel, 3) : (sub_label, obj_label, pred_label)
+        sub_boxes (#rel, 4) : (x1, y1, x2, y2)
+        obj_boxes (#rel, 4) : (x1, y1, x2, y2)
+        rel_scores (#rel, ) : scores for each predicate
+        sub_scores (#rel, ) : scores for each subject
+        obj_scores (#rel, ) : scores for each object
+    returns:
+        triplets (#rel, 3) : (sub_label, pred_label, ob_label)
+        triplet_boxes (#rel, 8) : array of boxes
+        triplet_scores (#rel, 3) : (sub_score, pred_score, ob_score)
+    """
+    sub_label, obj_label, pred_label = relations[:, 0], relations[:, 1], relations[:, 2]
+    triplets = np.column_stack((sub_label, pred_label, obj_label))
+    triplet_boxes = np.column_stack((sub_boxes, obj_boxes))
+    triplet_scores = None
+    if rel_scores is not None and sub_scores is not None and obj_scores is not None:
+        triplet_scores = np.column_stack((sub_scores, rel_scores, obj_scores))
+    return triplets, triplet_boxes, triplet_scores
 
 def _triplet(relations, classes, boxes, predicate_scores=None, class_scores=None):
     """

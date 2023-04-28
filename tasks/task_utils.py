@@ -176,9 +176,10 @@ def decode_seq_to_triplets(logits,
                               pred_seq,
                               quantization_bins,
                               coord_vocab_shift,
-                              num_obj_classes):
+                              num_obj_classes, num_rel_classes):
   _, seqlen, vocab_size = logits.shape
   triplet_len = 15
+  print(pred_seq[0,:15], pred_seq.shape)
   if seqlen % triplet_len != 0:  # truncate out the last few tokens.
     pred_seq = pred_seq[..., :-(seqlen % triplet_len)]
     logits = logits[..., :-(seqlen % triplet_len), :]
@@ -190,11 +191,11 @@ def decode_seq_to_triplets(logits,
   pred_rel_class_logits = tf.gather(logits, indices=[6], axis=2)
   pred_obj_class_p = tf.nn.softmax(pred_obj_class_logits) # (bsz, instances, triplet_len, vocab_size)
   pred_rel_class_p = tf.nn.softmax(pred_rel_class_logits)
-  print(pred_obj_class_p.shape)
-  print(pred_rel_class_p.shape)
+  # print(pred_obj_class_p.shape)
+  # print(pred_rel_class_p.shape)
   mask_s1 = [0.] * vocab.BASE_VOCAB_SHIFT  # reserved.
-  mask_s_rel = [0.] * num_obj_classes + [1.] * (coord_vocab_shift - vocab.BASE_VOCAB_SHIFT - num_obj_classes)  # labels.
-  mask_s_obj = [1.] * num_obj_classes + [0.] * (coord_vocab_shift - vocab.BASE_VOCAB_SHIFT - num_obj_classes)
+  mask_s_rel = [0.] * num_obj_classes + [1.] * num_rel_classes + [0.] * (coord_vocab_shift - vocab.BASE_VOCAB_SHIFT - num_obj_classes - num_rel_classes)  # labels.
+  mask_s_obj = [1.] * num_obj_classes + [0.] * num_rel_classes + [0.] * (coord_vocab_shift - vocab.BASE_VOCAB_SHIFT - num_obj_classes - num_rel_classes)
   mask_s3 = [0] * (vocab_size - coord_vocab_shift)  # coordinates and others.
   mask_obj = tf.constant(mask_s1 + mask_s_obj + mask_s3)
   mask_rel = tf.constant(mask_s1 + mask_s_rel + mask_s3)
@@ -204,10 +205,11 @@ def decode_seq_to_triplets(logits,
   # print(pred_class.shape)
   pred_obj_score = tf.reduce_sum(
       pred_obj_class_p * tf.one_hot(pred_obj_class, vocab_size), -1)
-  pred_rel_score = tf.reduce_sum(
-      pred_rel_class_p * tf.one_hot(pred_rel_class, vocab_size), -1)
-  print(pred_obj_score.shape)
-  print(pred_rel_score.shape)
+  # pred_rel_score = tf.reduce_sum(
+  #     pred_rel_class_p * tf.one_hot(pred_rel_class, vocab_size), -1)a
+  pred_rel_score = pred_rel_class_p
+  # print(pred_obj_score.shape)
+  # print(pred_rel_score.shape)
   pred_obj_class = tf.maximum(pred_obj_class - vocab.BASE_VOCAB_SHIFT, 0)
   pred_rel_class = tf.maximum(pred_rel_class - vocab.BASE_VOCAB_SHIFT - num_obj_classes, 0)
   # print(pred_class.shape)
@@ -248,7 +250,8 @@ def triplet_seq_to_bbox(seq, quantization_bins, seq_format='yxyx_name'):
   """Returns [0, 1] normalized yxyx bbox from token sequence."""
   # [batch, num_instances, triplet_len]
   box1_seq = tf.reshape(tf.gather(seq, indices=[0, 1, 2, 3, 4], axis=2), [-1, 5 * seq.shape[1]])
-  box2_seq = tf.reshape(tf.gather(seq, indices=[7, 8, 9, 10, 11], axis=2), [-1, 5 * seq.shape[1]])
+  box2_seq = tf.reshape(tf.gather(seq, indices=[8, 9, 10, 11, 12], axis=2), [-1, 5 * seq.shape[1]])
+  # print(seq[0,0])
   # print(box1_seq.shape)
 
   box1 = seq_to_bbox(box1_seq, quantization_bins, seq_format)

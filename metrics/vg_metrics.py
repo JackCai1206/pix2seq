@@ -29,6 +29,11 @@ class VGSGGRecallMetric():
             self.groundtruths[k].extend(tf.squeeze(tf.unstack(v, axis=0)))
     
     def result(self, step):
+        # compare predictions and groundtruths and print
+        # for k, v in self.predictions.items():
+        #     print(self.predictions[k])
+        #     if k in self.groundtruths: print(self.groundtruths[k])
+
         predictions: dict[str, BoxList] = {}
         for i, img_id in enumerate(self.predictions['image_ids']):
             img_id = img_id.numpy()
@@ -36,7 +41,7 @@ class VGSGGRecallMetric():
             boxes = tf.concat([self.predictions['box1'][i], self.predictions['box2'][i]], axis=0).numpy()
             obj_scores = tf.concat([self.predictions['obj_scores'][i][..., 0], self.predictions['obj_scores'][i][..., 1]], axis=0).numpy()
             rel_scores = self.predictions['rel_scores'][i].numpy()
-            rel_tuples = tf.concat([self.predictions['box1_label'][i], self.predictions['box2_label'][i]], axis=0).numpy()
+            rel_tuples = tf.stack([self.predictions['box1_label'][i], self.predictions['box2_label'][i], self.predictions['rel_label'][i]], axis=-1).numpy()
 
             # unique_idx = tf.unique(boxes)[1]
             # unique_boxes = tf.gather(boxes, unique_idx)
@@ -52,7 +57,7 @@ class VGSGGRecallMetric():
             img_id = img_id.numpy()
             labels = tf.concat([self.groundtruths['box1_label'][i], self.groundtruths['box2_label'][i]], axis=0).numpy()
             boxes = tf.concat([self.groundtruths['box1'][i], self.groundtruths['box2'][i]], axis=0).numpy()
-            rel_tuples = tf.concat([self.groundtruths['box1_label'][i], self.groundtruths['box2_label'][i]], axis=0).numpy()
+            rel_tuples = tf.stack([self.groundtruths['box1_label'][i], self.groundtruths['box2_label'][i], self.groundtruths['rel_label'][i]], axis=-1).numpy()
             # unique_idx = tf.unique(labels)[1]
             # unique_boxes = tf.gather(boxes, unique_idx)
             groundtruths[img_id] = BoxList(torch.tensor(boxes), self.config.task.image_size, mode='xyxy')

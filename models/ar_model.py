@@ -160,6 +160,7 @@ class Model(tf.keras.models.Model):
           (bsz * instances * num_samples, seqlen, vocab_size)
       encoded: `float` tensor of encoded images.
     """
+    tf.print(prompt_seq[0])
     if encoded is None:
       encoded = self._encode_images(images, training=False)
     encoded, prompt_seq = self._tile_vis_output(encoded, prompt_seq)
@@ -171,6 +172,8 @@ class Model(tf.keras.models.Model):
     pred_seq, logits = self.decoder.infer(
         prompt_seq, encoded, max_seq_len,
         temperature, top_k, top_p, sampling_callback)
+
+    tf.print(pred_seq[0])
 
     return pred_seq, logits, encoded
 

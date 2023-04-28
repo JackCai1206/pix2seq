@@ -164,6 +164,7 @@ def perform_training(config, datasets, tasks, train_steps, steps_per_loop,
       for _ in tf.range(steps_per_loop):  # using tf.range prevents unroll.
         with tf.name_scope(''):  # prevent `while_` prefix for variable names.
           strategy.run(train_step, ([next(it) for it in data_iterators],))
+      print('train_multiple_steps')
 
     global_step = trainer.optimizer.iterations
     cur_step = global_step.numpy()

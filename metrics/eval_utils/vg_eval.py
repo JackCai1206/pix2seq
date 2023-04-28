@@ -314,7 +314,7 @@ def evaluate_relation_of_one_image(groundtruth, prediction, global_container, ev
     # Mean Recall
     evaluator['eval_mean_recall'].collect_mean_recall_items(global_container, local_container, mode)
     # Zero shot Recall
-    evaluator['eval_zeroshot_recall'].calculate_recall(global_container, local_container, mode)
+    # evaluator['eval_zeroshot_recall'].calculate_recall(global_container, local_container, mode)
 
     return 
 
